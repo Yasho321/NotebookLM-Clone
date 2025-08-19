@@ -2,16 +2,35 @@ import 'dotenv/config';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { QdrantVectorStore } from '@langchain/qdrant';
 import OpenAI from 'openai';
-import Chat from '../models/chat.model';
+import Chat from '../models/chat.model.js';
+import { QdrantClient } from "@qdrant/js-client-rest";
 
 const client = new OpenAI();
+const qdrantClient = new QdrantClient({
+    url: process.env.QUADRANT_URL,
+    apiKey: process.env.QUADRANT_API_KEY,
+});
+
+async function createIndexes() {
+  await  qdrantClient.createPayloadIndex("notebookLM-Collection", {
+    field_name: "metadata.userId",
+    field_schema: "keyword"
+  });
+
+  await  qdrantClient.createPayloadIndex("notebookLM-Collection", {
+    field_name: "metadata.sourceId",
+    field_schema: "keyword"
+  });
+
+  console.log("Indexes created successfully ✅");
+}
 
 export const createMessage = async (req,res)=>{
     try {
         const userId = req.user._id;
         const {sourceId} = req.params;
         const {message} = req.body;
-
+        
         if(!userId){
             return res.status(400).json({
                 success : false ,
@@ -34,7 +53,7 @@ export const createMessage = async (req,res)=>{
             embeddings,
             {
             url: process.env.QUADRANT_URL,
-            api_key: process.env.QUADRANT_API_KEY,
+            apiKey: process.env.QUADRANT_API_KEY,
             collectionName: 'notebookLM-Collection',
             }
         );
@@ -43,10 +62,11 @@ export const createMessage = async (req,res)=>{
             k: 3,
              filter: {
                 must: [
-                { key: "userId", match: { value: userId.toString() } },
-                { key: "sourceId", match: { value: sourceId.toString() } },
+                { key: "metadata.userId", match: { value: userId.toString() } },
+                { key: "metadata.sourceId", match: { value: sourceId.toString() } },
                 ],
             },
+            
         });
 
         const relevantChunk = await vectorSearcher.invoke(message);
@@ -91,7 +111,7 @@ export const createMessage = async (req,res)=>{
         const finalMessages = [systemMessage, ...messages];
 
         const response = await client.chat.completions.create({
-            model: 'gpt-4.1',
+            model: 'gpt-4.1-mini',
             messages: finalMessages,
         }); 
 

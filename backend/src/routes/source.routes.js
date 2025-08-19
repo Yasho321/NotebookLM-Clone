@@ -25,7 +25,7 @@ const router = Router();
 
 router.post("/text", isLoggedIn , text)
 router.post("/upload", isLoggedIn, upload.single("file"),  uploadFile)
-router.get("/web", isLoggedIn, web)
+router.post("/web", isLoggedIn, web)
 
 
 

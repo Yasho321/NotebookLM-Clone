@@ -31,8 +31,8 @@ app.use(cookieParser())
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/api/v1/auth",authRoutes );
-app.use("api/v1/source", sourceRouter);
-app.use("api/v1/chat",chatRouter)
+app.use("/api/v1/source", sourceRouter);
+app.use("/api/v1/chat",chatRouter)
 
 
 
