@@ -8,11 +8,11 @@ const sourceSchema = new Schema({
     },
     type : {
         type : String,
-        enum : ['pdf','csv','link','text']
+        enum : ['pdf','csv','link','text','docx']
     },
     title : {
         type : String,
-        required : true
+        default : null 
     },
     rawURL : {
         type : String,
