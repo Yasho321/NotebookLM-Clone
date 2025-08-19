@@ -368,6 +368,7 @@ export const web = async(req, res)=>{
          const source = await Source.create({
             userId,
             type : 'link',
+            rawURL : url
         })
 
         if(!source){

@@ -19,10 +19,7 @@ const sourceSchema = new Schema({
         default : null
 
     },
-    filePath : {
-        type: String , 
-        default : null
-    },
+   
 
 },{
     timestamps : true
