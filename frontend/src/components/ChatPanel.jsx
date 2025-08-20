@@ -43,7 +43,7 @@ export default function ChatPanel() {
 
   if (!selectedSource) {
     return (
-      <div className="w-96 bg-chat-bg border-l border-border h-full flex flex-col">
+      <div className="w-[500px] bg-chat-bg border-l border-border h-full flex flex-col">
         <div className="p-4 border-b border-border">
           <h2 className="text-lg font-semibold text-foreground">Chat</h2>
         </div>
@@ -60,7 +60,7 @@ export default function ChatPanel() {
   }
 
   return (
-    <div className="w-96 bg-chat-bg border-l border-border h-full flex flex-col">
+    <div className="w-[500px] bg-chat-bg border-l border-border h-full flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-border">
         <h2 className="text-lg font-semibold text-foreground">Chat</h2>

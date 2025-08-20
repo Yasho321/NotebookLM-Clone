@@ -7,7 +7,7 @@ export default function ContentPanel() {
 
   if (!selectedSource) {
     return (
-      <div className="flex-1 bg-background flex items-center justify-center">
+      <div className="flex-1 max-w-2xl bg-background flex items-center justify-center">
         <div className="text-center">
           <Sparkles className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
           <h2 className="text-2xl font-semibold text-foreground mb-2">
