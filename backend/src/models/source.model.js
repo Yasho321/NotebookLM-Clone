@@ -14,6 +14,10 @@ const sourceSchema = new Schema({
         type : String,
         default : null 
     },
+    summary :{
+        type : String,
+        default : null
+    },
     rawURL : {
         type : String,
         default : null

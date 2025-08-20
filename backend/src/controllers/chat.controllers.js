@@ -4,6 +4,7 @@ import { QdrantVectorStore } from '@langchain/qdrant';
 import OpenAI from 'openai';
 import Chat from '../models/chat.model.js';
 import { QdrantClient } from "@qdrant/js-client-rest";
+import { log } from 'util';
 
 const client = new OpenAI();
 const qdrantClient = new QdrantClient({
@@ -142,6 +143,55 @@ export const createMessage = async (req,res)=>{
             success: false,
             message: 'Internal error while chatting'
         })
+        
+    }
+}
+
+export const getChats = async (req,res)=>{
+    try {
+         const userId = req.user._id;
+        const {sourceId} = req.params;
+         if(!userId){
+            return res.status(400).json({
+                success : false ,
+                message : 'Not Authorized'
+            })
+        }
+
+        if(!sourceId ){
+            return res.status(400).json({
+                success : false ,
+                message : 'No sourceId '
+            })
+        }
+
+        const chats = await Chat.find({
+            userId,
+            sourceId
+        });
+        if(!chats){
+            return res.status(200).json({
+                success: true , 
+                chats,
+                message : "No message in chat"
+            })
+        }
+
+         return res.status(200).json({
+                success: true , 
+                chats,
+                message : "Messages fetched"
+            })
+
+
+        
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            success:false ,
+            message : "Internal error while fetching chats"
+        })
+        
         
     }
 }

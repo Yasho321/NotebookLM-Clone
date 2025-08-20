@@ -1,6 +1,6 @@
 import {Router } from 'express';
 import { isLoggedIn } from '../middlewares/auth.middlewares.js';
-import { text,  uploadFile, web } from '../controllers/source.controllers.js';
+import { getSources, text,  uploadFile, web } from '../controllers/source.controllers.js';
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -26,7 +26,7 @@ const router = Router();
 router.post("/text", isLoggedIn , text)
 router.post("/upload", isLoggedIn, upload.single("file"),  uploadFile)
 router.post("/web", isLoggedIn, web)
-
+router.get("/",isLoggedIn,getSources)
 
 
 

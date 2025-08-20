@@ -13,6 +13,7 @@ import { PuppeteerWebBaseLoader } from "@langchain/community/document_loaders/we
 import OpenAI from "openai";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
+import fs from 'fs'
 
 const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
@@ -151,7 +152,10 @@ export const uploadFile = async(req, res)=>{
         const parsedContent = JSON.parse(rawContent);
 
         source.title = parsedContent?.title ; 
+         source.summary = parsedContent?.summary;
         await source.save();
+
+         await fs.promises.unlink(filePath);
 
 
 
@@ -175,6 +179,11 @@ export const uploadFile = async(req, res)=>{
         
     } catch (error) {
         console.log(error)
+
+         if (req.file?.path && fs.existsSync(req.file.path)) {
+            await fs.promises.unlink(req.file.path);
+        }
+
         return res.status(500).json({
             success:false,
             message: 'Internal server error while indexing document'
@@ -297,6 +306,7 @@ export const text = async(req, res)=>{
         
         
         source.title = parsedContent?.title ; 
+         source.summary = parsedContent?.summary;
         await source.save();
 
 
@@ -448,6 +458,7 @@ export const web = async(req, res)=>{
         const parsedContent = JSON.parse(rawContent);
 
         source.title = parsedContent?.title ; 
+        source.summary = parsedContent?.summary;
         await source.save();
 
 
@@ -479,4 +490,41 @@ export const web = async(req, res)=>{
         
     }
     
+}
+
+export const getSources = async(req,res)=>{
+    try {
+        const userId = req.user._id ;
+        if(!userId){
+            return res.status(401).json({
+                success: false , 
+                message : "Unauthorized"
+            })
+        }
+        const sources = await Source.find({
+            userId
+        })
+
+        if(!sources){
+            return res.status(400).json({
+                success:false ,
+                message:"Unable to fetch sources"
+            })
+        }
+
+        return res.status(200).json({
+            success:true ,
+            message: "Sources fetched successfully",
+            sources
+        })
+        
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            success:false,
+            message:"Internal server error while fetching sources"
+        })
+        
+        
+    }
 }
