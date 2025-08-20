@@ -34,7 +34,7 @@ export default function AuthForm() {
         <CardHeader className="text-center">
           <div className="flex items-center justify-center space-x-2 mb-4">
             <Brain className="w-8 h-8 text-primary" />
-            <span className="text-2xl font-bold text-foreground">NotebookLM</span>
+            <span className="text-2xl font-bold text-foreground">Chithhi LM</span>
           </div>
           <CardTitle className="text-foreground">Welcome</CardTitle>
           <CardDescription className="text-muted-foreground">
