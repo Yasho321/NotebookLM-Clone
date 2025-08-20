@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Send, Bot, User, MessageSquare, Loader2 } from "lucide-react";
 import { useChatStore } from '../stores/chatStore';
 import { useSourceStore } from '../stores/sourceStore';
+import MessageContent from './MessageContent';
 
 export default function ChatPanel() {
   const { selectedSource } = useSourceStore();
@@ -112,9 +113,7 @@ export default function ChatPanel() {
                     : 'bg-chat-assistant border-border'
                 }`}
               >
-                <p className="text-sm text-foreground whitespace-pre-wrap">
-                  {message.content}
-                </p>
+                 <MessageContent content={message.content} />
               </Card>
             </div>
           </div>
