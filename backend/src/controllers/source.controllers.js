@@ -340,13 +340,10 @@ export const web = async(req, res)=>{
     try {
         const {url} = req.body;
         const userId = req.user._id ;
-        const loader = new PuppeteerWebBaseLoader(url, {
-            launchOptions: { headless: true },
-            gotoOptions: { waitUntil: "domcontentloaded" }
-        });
+       
 
         const loader2 = new CheerioWebBaseLoader(
-        "https://news.ycombinator.com/item?id=34817881",{
+        url,{
               maxConcurrency: 5,
         }
   
@@ -359,7 +356,7 @@ export const web = async(req, res)=>{
             })
         }
 
-        const docs = await loader.load();
+       
         const docs2= await loader2.load();
       
 
@@ -368,7 +365,7 @@ export const web = async(req, res)=>{
             chunkOverlap: 0,
         });
 
-        const chunks = await splitter.splitDocuments(docs);
+        
         const chunks2 = await splitter.splitDocuments(docs2);
 
         const embeddings = new OpenAIEmbeddings({
@@ -388,13 +385,7 @@ export const web = async(req, res)=>{
             })
         }
 
-        const documents = chunks.map(chunk => new Document({
-            pageContent: chunk.pageContent,
-            metadata: {
-                userId: userId.toString(),
-                sourceId: source._id.toString()
-            }
-        }));
+       
 
         const documents2= chunks2.map(chunk => new Document({
             pageContent: chunk.pageContent,
@@ -404,10 +395,10 @@ export const web = async(req, res)=>{
             }
         }));
 
-        const finalDocs = [...documents,...documents2]
+        
 
 
-        const vectorStore = await QdrantVectorStore.fromDocuments(finalDocs , embeddings, {
+        const vectorStore = await QdrantVectorStore.fromDocuments(documents2 , embeddings, {
             url: process.env.QUADRANT_URL,
             apiKey: process.env.QUADRANT_API_KEY,
             collectionName: 'notebookLM-Collection',
