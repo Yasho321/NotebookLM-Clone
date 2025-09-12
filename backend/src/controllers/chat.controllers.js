@@ -112,65 +112,13 @@ export const createMessage = async (req,res)=>{
 
          const refinedQuery2 = response3.choices[0].message.content ;
 
-          const longAnswer = `
-            You are a teacher who teaches coding . You are an expert in coding . Your work is to answer the user's query in exact 200 
-            words(should be as close as possible). The answer should be precise and should have all the needed information . 
-            Output should be a single string which will be answer . 
-            for example :- 'Answer having 200 words'
-            user query :- ${refinedQuery}
-         `
-         const response4 = await client.chat.completions.create({
-            model: 'gpt-4.1-mini',
-            messages: [{
-                role : 'user',
-                content : longAnswer
-            }],
-        }); 
-
-         const refinedQuery3 = response4.choices[0].message.content ;
-
-         const subqueryPrompt = `
-            You are an expert in writing sub query . That is you will be given a query , you will have to reframe the query in a different 
-            way but it should have the same meaning but have some better context . 
-            Output should be a single string which will be the subquery .
-            for example :- 'Sub query for the user query'
-            User query :- ${refinedQuery}
-         `
-          const response5 = await client.chat.completions.create({
-            model: 'gpt-4.1-mini',
-            messages: [{
-                role : 'user',
-                content : subqueryPrompt
-            }],
-        }); 
-
-         const subquery = response5.choices[0].message.content ;
-
-         const subqueryPrompt2 = `
-            You are an expert in writing sub query . That is you will be given a query , you will have to reframe the query in a different 
-            way but it should have the same meaning but have some better context . 
-            Output should be a single string which will be the subquery .
-            for example :- 'Sub query for the user query'
-            User query :- ${refinedQuery}
-            Subquery should not be same as or match :- ${subquery}
-         `
-         const response6 = await client.chat.completions.create({
-            model: 'gpt-4.1-mini',
-            messages: [{
-                role : 'user',
-                content : subqueryPrompt2
-            }],
-        }); 
-
-        const subquery2 = response6.choices[0].message.content ;
+         
 
         const relevantChunk2 = await vectorSearcher.invoke(refinedQuery2);
-        const relevantChunk3 = await vectorSearcher.invoke(refinedQuery3);
-        const relevantChunk4 = await vectorSearcher.invoke(subquery);
-        const relevantChunk5 = await vectorSearcher.invoke(subquery2);
+       
 
 
-         const allChunks = [...relevantChunk2 , ...relevantChunk3 , ...relevantChunk4 , relaventChunk5];
+         const allChunks = [...relevantChunk,...relevantChunk2  ];
 
          const freqMap = new Map();
 
@@ -193,7 +141,7 @@ export const createMessage = async (req,res)=>{
             return dataA.firstIndex - dataB.firstIndex;
          })
 
-         const priorityChunks = sortedChunks.slice(0,5).map(([chunk])=>JSON.parse(chunk));
+         const priorityChunks = sortedChunks.slice(0,3).map(([chunk])=>JSON.parse(chunk));
 
 
         let chat = await Chat.findOne({
