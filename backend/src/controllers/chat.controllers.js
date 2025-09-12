@@ -46,6 +46,26 @@ export const createMessage = async (req,res)=>{
             })
         }
 
+         const rewrittingQuery = `
+        You are an expert query writter. Fix all the typo's and add more context 
+        to the wuery so it can fetch more relevant data.
+        Output should be a single string having query
+        for example : 'What is asynchronous function'
+
+        user query :- ${message}
+         `
+         
+
+        const response = await client.chat.completions.create({
+            model: 'gpt-4.1-mini',
+            messages: [{
+                role : 'user',
+                content : rewrittingQuery
+            }],
+        }); 
+
+         const refinedQuery = response.choices[0].message.content ;
+
         const embeddings = new OpenAIEmbeddings({
             model: 'text-embedding-3-large',
         });
@@ -70,7 +90,111 @@ export const createMessage = async (req,res)=>{
             
         });
 
-        const relevantChunk = await vectorSearcher.invoke(message);
+        const relevantChunk = await vectorSearcher.invoke(refinedQuery);
+
+        const gettingBetterChunksPrompt = `
+            You are an expert query writer. Your work is to check the quality of relevant chunks and to find the least relevant chunk. 
+            and you have to optimize the prompt such that quality of chunks improve according to the query . The query should be same as 
+            the original user's query so that user get's the most accurate answer . 
+            Output should be a single string that will be the optimized query . 
+            for example :- 'What is asynchronous functions in javascript'
+            user's orignial query :- ${message}
+            user's query with fixed typo and more context :- ${refinedQuery}
+            relavent chunks fetched :- ${relevantChunk}
+        `
+         const response3 = await client.chat.completions.create({
+            model: 'gpt-4.1-mini',
+            messages: [{
+                role : 'user',
+                content : gettingBetterChunksPrompt
+            }],
+        }); 
+
+         const refinedQuery2 = response3.choices[0].message.content ;
+
+          const longAnswer = `
+            You are a teacher who teaches coding . You are an expert in coding . Your work is to answer the user's query in exact 200 
+            words(should be as close as possible). The answer should be precise and should have all the needed information . 
+            Output should be a single string which will be answer . 
+            for example :- 'Answer having 200 words'
+            user query :- ${refinedQuery}
+         `
+         const response4 = await client.chat.completions.create({
+            model: 'gpt-4.1-mini',
+            messages: [{
+                role : 'user',
+                content : longAnswer
+            }],
+        }); 
+
+         const refinedQuery3 = response4.choices[0].message.content ;
+
+         const subqueryPrompt = `
+            You are an expert in writing sub query . That is you will be given a query , you will have to reframe the query in a different 
+            way but it should have the same meaning but have some better context . 
+            Output should be a single string which will be the subquery .
+            for example :- 'Sub query for the user query'
+            User query :- ${refinedQuery}
+         `
+          const response5 = await client.chat.completions.create({
+            model: 'gpt-4.1-mini',
+            messages: [{
+                role : 'user',
+                content : subqueryPrompt
+            }],
+        }); 
+
+         const subquery = response5.choices[0].message.content ;
+
+         const subqueryPrompt2 = `
+            You are an expert in writing sub query . That is you will be given a query , you will have to reframe the query in a different 
+            way but it should have the same meaning but have some better context . 
+            Output should be a single string which will be the subquery .
+            for example :- 'Sub query for the user query'
+            User query :- ${refinedQuery}
+            Subquery should not be same as or match :- ${subquery}
+         `
+         const response6 = await client.chat.completions.create({
+            model: 'gpt-4.1-mini',
+            messages: [{
+                role : 'user',
+                content : subqueryPrompt2
+            }],
+        }); 
+
+        const subquery2 = response6.choices[0].message.content ;
+
+        const relevantChunk2 = await vectorSearcher.invoke(refinedQuery2);
+        const relevantChunk3 = await vectorSearcher.invoke(refinedQuery3);
+        const relevantChunk4 = await vectorSearcher.invoke(subquery);
+        const relevantChunk5 = await vectorSearcher.invoke(subquery2);
+
+
+         const allChunks = [...relevantChunk2 , ...relevantChunk3 , ...relevantChunk4 , relaventChunk5];
+
+         const freqMap = new Map();
+
+         allChunks.forEach((chunk, index)=>{
+            const key = JSON.stringify(chunk)
+            if(!freqMap.has(key)){
+                freqMap.set(key , { count : 1 ,firstIndex : index})
+            }else{
+                freqMap.get(key).count++;
+            }
+         })
+
+         const sortedChunks = [...freqMap.entries()].sort((a,b)=>{
+            const [chunkA , dataA] = a;
+            const [chunkB , dataB] = b ;
+            if(dataB.count !== dataA.count){
+                return dataB.count - dataA.count;
+            }
+
+            return dataA.firstIndex - dataB.firstIndex;
+         })
+
+         const priorityChunks = sortedChunks.slice(0,5).map(([chunk])=>JSON.parse(chunk));
+
 
         let chat = await Chat.findOne({
             userId,
@@ -101,7 +225,7 @@ export const createMessage = async (req,res)=>{
             give sources as well if web give relevant url's 
 
             Context:
-            ${JSON.stringify(relevantChunk)}
+            ${JSON.stringify(priorityChunks)}
 
         `
         const systemMessage = {
@@ -111,12 +235,12 @@ export const createMessage = async (req,res)=>{
 
         const finalMessages = [systemMessage, ...messages];
 
-        const response = await client.chat.completions.create({
+        const response2 = await client.chat.completions.create({
             model: 'gpt-4.1-mini',
             messages: finalMessages,
         }); 
 
-        const refinedRes = response.choices[0].message.content ; 
+        const refinedRes = response2.choices[0].message.content ; 
         messages.push({
             role : 'assistant',
             content : refinedRes
