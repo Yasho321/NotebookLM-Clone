@@ -13,6 +13,10 @@ const userSchema = new Schema({
     password : {
         type : String,
         required : true
+    },
+    facts :{
+        type: [String],
+        default : []
     } 
 },{
     timestamps : true
