@@ -32,6 +32,7 @@
     "mongodb": "^6.18.0",
     "mongoose": "^8.17.2",
     "multer": "^2.0.2",
+    "neo4j-driver": "^5.28.1",
     "openai": "^4.104.0",
     "pdf-parse": "^1.1.1",
     "puppeteer": "^24.16.2"
