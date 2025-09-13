@@ -628,7 +628,13 @@ export const createMessage = async (req,res)=>{
             content: SYSTEM_PROMPT
         };
 
-        const finalMessages = [systemMessage, ...messages];
+        let previousChats ;
+        if (messages.length >50){
+            previousChats  = messages.splice(-50);
+        }
+        previousChats = messages ;
+
+        const finalMessages = [systemMessage, ...previousChats];
 
         const response2 = await client.chat.completions.create({
             model: 'gpt-4.1-mini',
