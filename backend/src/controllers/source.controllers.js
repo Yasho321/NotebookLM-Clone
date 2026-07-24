@@ -26,6 +26,37 @@ const qdrantClient = new QdrantClient({
     apiKey: process.env.QUADRANT_API_KEY,
 });
 
+
+
+async function ensurePayloadIndex(collectionName, fieldName) {
+  try {
+    const collection = await qdrantClient.getCollection(collectionName);
+
+    const payloadIndexes =
+      collection.result?.payload_schema ||
+      collection.payload_schema ||
+      {};
+
+    if (payloadIndexes[fieldName]) {
+      console.log(`✅ Index already exists for ${fieldName}`);
+      return;
+    }
+
+    console.log(`🔨 Creating index for ${fieldName}...`);
+
+    await client.createPayloadIndex(collectionName, {
+      field_name: fieldName,
+      field_schema: "keyword",
+    });
+
+    console.log(`✅ Created index for ${fieldName}`);
+  } catch (err) {
+    console.error(`❌ Failed while ensuring index ${fieldName}:`, err);
+  }
+}
+
+
+
 // Initialize Qdrant collection and indexes
 
 
@@ -36,6 +67,10 @@ const qdrantClient = new QdrantClient({
 export const uploadFile = async(req, res)=>{
     try {
          const userId = req.user._id;
+
+        await ensurePayloadIndex("notebookLM-Collection", "metadata.userId");
+await ensurePayloadIndex("notebookLM-Collection", "metadata.sourceId");
+await ensurePayloadIndex("memory-notebookLM-Collection", "metadata.userId");
         
 
         if(!userId){
