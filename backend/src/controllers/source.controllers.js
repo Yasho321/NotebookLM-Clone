@@ -40,7 +40,7 @@ async function ensurePayloadIndex(collectionName, fieldName) {
 
     console.log(`🔨 Creating index for ${fieldName}...`);
 
-    await client.createPayloadIndex(collectionName, {
+    await qdrantClient.createPayloadIndex(collectionName, {
       field_name: fieldName,
       field_schema: "keyword",
     });
