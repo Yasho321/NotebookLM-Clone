@@ -1,13 +1,13 @@
-import 'dotenv/config';
-import { OpenAIEmbeddings } from '@langchain/openai';
-import { QdrantVectorStore } from '@langchain/qdrant';
-import OpenAI from 'openai';
+import "dotenv/config";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { QdrantVectorStore } from "@langchain/qdrant";
+import OpenAI from "openai";
 import { Document } from "@langchain/core/documents";
-import Chat from '../models/chat.model.js';
+import Chat from "../models/chat.model.js";
 import { QdrantClient } from "@qdrant/js-client-rest";
-import { log } from 'util';
-import neo4j from 'neo4j-driver'
-import User from '../models/user.model.js';
+import { log } from "util";
+import neo4j from "neo4j-driver";
+import User from "../models/user.model.js";
 
 const client = new OpenAI();
 
@@ -41,78 +41,73 @@ async function ensurePayloadIndex(collectionName, fieldName) {
   }
 }
 
-const fetchMemory=async(message , userId)=>{
-    try {
-        const URI = process.env.NEO4J_URI
-        const USER = process.env.NEO4J_USERNAME
-        const PASSWORD = process.env.NEO4J_PASSWORD
-        let driver = neo4j.driver(URI, neo4j.auth.basic(USER, PASSWORD));
-        
+const fetchMemory = async (message, userId) => {
+  try {
+    const URI = process.env.NEO4J_URI;
+    const USER = process.env.NEO4J_USERNAME;
+    const PASSWORD = process.env.NEO4J_PASSWORD;
+    let driver = neo4j.driver(URI, neo4j.auth.basic(USER, PASSWORD));
 
-        let { records, summary } = await driver.executeQuery(
-        `
+    let { records, summary } = await driver.executeQuery(
+      `
             MATCH (u:User {id: $userId})-[r*1..]-(n)
             RETURN u, r, n
         `,
-        {userId: userId.toString()},
-        { database: process.env.NEO4J_DATABASE }
-        )
-        let graphMap="" ;
-        // Loop through results
-        for (let record of records) {
-        const user = record.get('u')
-        const rels = record.get('r')
-        const nodes = record.get('n')
+      { userId: userId.toString() },
+      { database: process.env.NEO4J_DATABASE },
+    );
+    let graphMap = "";
+    // Loop through results
+    for (let record of records) {
+      const user = record.get("u");
+      const rels = record.get("r");
+      const nodes = record.get("n");
 
-            graphMap +=`User node: ${JSON.stringify(user.properties)} \n`;
-            graphMap += `Connected nodes: ${JSON.stringify(nodes.properties)} \n`
-            graphMap += `Relationships: ${rels.map(r => r.type).join(', ')} \n`
-            graphMap +=`Available keys: ${record.keys}\n`
-        }
+      graphMap += `User node: ${JSON.stringify(user.properties)} \n`;
+      graphMap += `Connected nodes: ${JSON.stringify(nodes.properties)} \n`;
+      graphMap += `Relationships: ${rels.map((r) => r.type).join(", ")} \n`;
+      graphMap += `Available keys: ${record.keys}\n`;
+    }
 
-        await driver.close()
+    await driver.close();
 
-         const embeddings = new OpenAIEmbeddings({
-            model: 'text-embedding-3-large',
-        });
+    const embeddings = new OpenAIEmbeddings({
+      model: "text-embedding-3-large",
+    });
 
-        const vectorStore = await QdrantVectorStore.fromExistingCollection(
-            embeddings,
-            {
-            url: process.env.QUADRANT_URL,
-            apiKey: process.env.QUADRANT_API_KEY,
-            collectionName: 'memory-notebookLM-Collection',
-            }
-        );
+    const vectorStore = await QdrantVectorStore.fromExistingCollection(
+      embeddings,
+      {
+        url: process.env.QUADRANT_URL,
+        apiKey: process.env.QUADRANT_API_KEY,
+        collectionName: "memory-notebookLM-Collection",
+      },
+    );
 
-        const vectorSearcher = vectorStore.asRetriever({
-            k: 3,
-             filter: {
-                must: [
-                { key: "metadata.userId", match: { value: userId.toString() } },
-                ],
-            },
-            
-        });
-        
-         const relevantChunk = await vectorSearcher.invoke(message);
+    const vectorSearcher = vectorStore.asRetriever({
+      k: 3,
+      filter: {
+        must: [{ key: "metadata.userId", match: { value: userId.toString() } }],
+      },
+    });
 
-         let relevantChunkText = "";
+    const relevantChunk = await vectorSearcher.invoke(message);
 
-         if (!relevantChunk || relevantChunk.length === 0) {
-            relevantChunkText="No relevant information found in vector memory.";
-        }else {
-            relevantChunkText = JSON.stringify(relevantChunk)
-        }
+    let relevantChunkText = "";
 
-        let relevantMaps="";
+    if (!relevantChunk || relevantChunk.length === 0) {
+      relevantChunkText = "No relevant information found in vector memory.";
+    } else {
+      relevantChunkText = JSON.stringify(relevantChunk);
+    }
 
-        
+    let relevantMaps = "";
 
-        if(graphMap.trim()===""){
-            relevantMaps = "No relevant information and relationships found in graph map."
-        }else{
-             const relevantMapsPrompt = `
+    if (graphMap.trim() === "") {
+      relevantMaps =
+        "No relevant information and relationships found in graph map.";
+    } else {
+      const relevantMapsPrompt = `
             You are an expert data fetching AI assistant your work is to fetch the relevant maps and relations , connected nodes and Available keys 
             according to the relavent chunks given . 
             Give the most relevant data and filter out all unnecessary stuff . 
@@ -121,42 +116,38 @@ const fetchMemory=async(message , userId)=>{
             - Do not add any context from your side 
             Relavent Chunks :- ${relevantChunkText}
             Whole Graph Map :- ${graphMap} 
-         `
+         `;
 
-         const response = await client.chat.completions.create({
-            model: 'gpt-4.1-mini',
-            messages: [{
-                role : 'user',
-                content : relevantMapsPrompt
-            }],
-        }); 
+      const response = await client.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [
+          {
+            role: "user",
+            content: relevantMapsPrompt,
+          },
+        ],
+      });
 
-         relevantMaps = response.choices[0].message.content ;
+      relevantMaps = response.choices[0].message.content;
+    }
 
-        }
-
-        
-
-         const userContext = `
+    const userContext = `
             Relations and informations from graph :- ${relevantMaps}
             Relevant chunks of information about the user :- ${relevantChunkText}
-         `
+         `;
 
-         
-        return userContext ;
-        
-    } catch (error) {
-        console.log(error)
-        return 'No context as of now'
-        
-    }
-}
+    return userContext;
+  } catch (error) {
+    console.log(error);
+    return "No context as of now";
+  }
+};
 
-const addToMemory = async(message , userId)=>{
-    try {
-        const {user , assistant} = message;
+const addToMemory = async (message, userId) => {
+  try {
+    const { user, assistant } = message;
 
-        const isLongTermPrompt = `
+    const isLongTermPrompt = `
             You are an expert in finding whether the message should be kept in Longterm memory or shortterm memory .
             You will get a message having a double message conversation from user and assistant both your work is to find whether , 
             the conversation have something that should be stored in a long term memory or not , 
@@ -184,25 +175,25 @@ const addToMemory = async(message , userId)=>{
               - Response should be a simple yes if it has something that should be stored in Long Term , If nothing in the message should be stored 
                 in long term memory than give a simple no as a response 
               - Your response should only be a single word either  yes or no
-         `
+         `;
 
-         const response = await client.chat.completions.create({
-            model: 'gpt-4.1-mini',
-            messages: [{
-                role : 'user',
-                content : isLongTermPrompt
-            }],
-        }); 
+    const response = await client.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "user",
+          content: isLongTermPrompt,
+        },
+      ],
+    });
 
-        const isLongTerm = response.choices[0].message.content ;
+    const isLongTerm = response.choices[0].message.content;
 
-        
+    if (isLongTerm.trim().toLowerCase() == "no") {
+      return;
+    }
 
-         if(isLongTerm.trim().toLowerCase()=="no"){
-            return ;
-         }
-
-         const isFactualPrompt = `
+    const isFactualPrompt = `
             You are an expert in finding whether the message should be kept in Factual longterm memory or Episodic longterm memory .
             You will get a message having a double message conversation from user and assistant both your work is to find whether , 
             the conversation have something that should be stored in a factual long term memory or not , 
@@ -231,20 +222,22 @@ const addToMemory = async(message , userId)=>{
                 in Factual long term memory than give a simple no as a response 
               - Your response should only be a single word either  yes or no
 
-         `
+         `;
 
-         const response2 = await client.chat.completions.create({
-            model: 'gpt-4.1-mini',
-            messages: [{
-                role : 'user',
-                content : isFactualPrompt
-            }],
-        }); 
+    const response2 = await client.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "user",
+          content: isFactualPrompt,
+        },
+      ],
+    });
 
-         const isFactual = response2.choices[0].message.content ;
-        
-         if(isFactual =="yes"){
-            const factsPrompt = `
+    const isFactual = response2.choices[0].message.content;
+
+    if (isFactual == "yes") {
+      const factsPrompt = `
                 You are an expert data retriever , you retrieve all the important data in as much small sentence possible cutting of all the unnecessary grammer and language 
                 just the data that's needed . 
                 Now you have to retrieve the factual long term memory data from a  double message conversation from user and assistant . The data should 
@@ -273,69 +266,70 @@ const addToMemory = async(message , userId)=>{
                 - Output should be a string having the factual data 
                  
                 
-            `
+            `;
 
-            const response = await client.chat.completions.create({
-                model: 'gpt-4.1-mini',
-                messages: [{
-                    role : 'user',
-                    content : factsPrompt
-                }],
-            }); 
+      const response = await client.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [
+          {
+            role: "user",
+            content: factsPrompt,
+          },
+        ],
+      });
 
-            const fact = response.choices[0].message.content ;
-            const userdb = await User.findByIdAndUpdate(userId, {
-                $push : {facts : fact}
-            },{
-                new : true , upsert : true 
-            })
+      const fact = response.choices[0].message.content;
+      const userdb = await User.findByIdAndUpdate(
+        userId,
+        {
+          $push: { facts: fact },
+        },
+        {
+          new: true,
+          upsert: true,
+        },
+      );
 
-            
-
-            return
-
-         }else {
-            const URI = process.env.NEO4J_URI
-            const USER = process.env.NEO4J_USERNAME
-            const PASSWORD = process.env.NEO4J_PASSWORD
-            let driver = neo4j.driver(URI, neo4j.auth.basic(USER, PASSWORD));
-            let { records, summary } = await driver.executeQuery(
-            `
+      return;
+    } else {
+      const URI = process.env.NEO4J_URI;
+      const USER = process.env.NEO4J_USERNAME;
+      const PASSWORD = process.env.NEO4J_PASSWORD;
+      let driver = neo4j.driver(URI, neo4j.auth.basic(USER, PASSWORD));
+      let { records, summary } = await driver.executeQuery(
+        `
                MERGE (u:User {id: $userId})
                WITH u
                OPTIONAL MATCH (u)-[r*1..]-(n)
                RETURN u, r, n
 
             `,
-            {userId: userId.toString()},
-            { database: process.env.NEO4J_DATABASE }
-            )
-            let graphMap="" ;
-            // Loop through results
-            for (let record of records) {
-            const user = record.get('u')
-            const rels = record.get('r')
-            const nodes = record.get('n')
+        { userId: userId.toString() },
+        { database: process.env.NEO4J_DATABASE },
+      );
+      let graphMap = "";
+      // Loop through results
+      for (let record of records) {
+        const user = record.get("u");
+        const rels = record.get("r");
+        const nodes = record.get("n");
 
-                if (user) {
-                    graphMap += `User node: ${JSON.stringify(user.properties)} \n`;
-                }
+        if (user) {
+          graphMap += `User node: ${JSON.stringify(user.properties)} \n`;
+        }
 
-                if (nodes) {
-                    graphMap += `Connected nodes: ${JSON.stringify(nodes.properties)} \n`;
-                }
+        if (nodes) {
+          graphMap += `Connected nodes: ${JSON.stringify(nodes.properties)} \n`;
+        }
 
-                if (rels && rels.length > 0) {
-                    graphMap += `Relationships: ${rels.map(r => r.type).join(', ')} \n`;
-                }
+        if (rels && rels.length > 0) {
+          graphMap += `Relationships: ${rels.map((r) => r.type).join(", ")} \n`;
+        }
 
-                graphMap += `Available keys: ${record.keys}\n`;
-            }
+        graphMap += `Available keys: ${record.keys}\n`;
+      }
 
-           
-
-
-            const epsPrompt1 = `
+      const epsPrompt1 = `
                 You are an AI assistant expert in fetching the episodic long term memory and  writing  Cypher queries for the same in neo4j graph db , write cypher queries to create the relations 
                 among the data which can be retrieved later as a episodic long term memory . Write as such that it will create a node if it didn't already exist 
                 Already present relation of the user :- 
@@ -374,29 +368,28 @@ const addToMemory = async(message , userId)=>{
                 - There should nothing in the response except query , no mark down , no extra punctuation "forward slash n" for new line , nothing 
                   only and only cypher query
 
-            `
-            const response = await client.chat.completions.create({
-                model: 'gpt-4.1-mini',
-                messages: [{
-                    role : 'user',
-                    content : epsPrompt1
-                }],
-            }); 
+            `;
+      const response = await client.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [
+          {
+            role: "user",
+            content: epsPrompt1,
+          },
+        ],
+      });
 
-            const cypherQuery = response.choices[0].message.content ;
+      const cypherQuery = response.choices[0].message.content;
 
-            const cypherRes = await driver.executeQuery(
-                cypherQuery
-            ,
-            {userId: userId.toString()},
-            { database: process.env.NEO4J_DATABASE_NAME }
-            )
+      const cypherRes = await driver.executeQuery(
+        cypherQuery,
+        { userId: userId.toString() },
+        { database: process.env.NEO4J_DATABASE_NAME },
+      );
 
-           
+      await driver.close();
 
-            await driver.close()
-
-            const epsPrompt2 = `
+      const epsPrompt2 = `
                 You are an AI assistant expert in fetching the episodic long term memory and  giving the important information with all the noises cut down so that it can 
                 be stored in a vector DB sementically .
                 
@@ -417,142 +410,129 @@ const addToMemory = async(message , userId)=>{
                 IMPORTANT :- 
                 - Only give response which needs to go in the vector db , no noise or wrapper text  
 
-            `
-             const response2 = await client.chat.completions.create({
-                model: 'gpt-4.1-mini',
-                messages: [{
-                    role : 'user',
-                    content : epsPrompt2
-                }],
-            }); 
+            `;
+      const response2 = await client.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [
+          {
+            role: "user",
+            content: epsPrompt2,
+          },
+        ],
+      });
 
-            const indexingContent = response2.choices[0].message.content ;
+      const indexingContent = response2.choices[0].message.content;
 
-            const embeddings = new OpenAIEmbeddings({
-                 model: 'text-embedding-3-large',
-            });
+      const embeddings = new OpenAIEmbeddings({
+        model: "text-embedding-3-large",
+      });
 
-            const documents =[new Document({
-                pageContent: indexingContent,
-                metadata: {
-                    userId: userId.toString(),
-                   
-                }
-            })]
+      const documents = [
+        new Document({
+          pageContent: indexingContent,
+          metadata: {
+            userId: userId.toString(),
+          },
+        }),
+      ];
 
-            const vectorStore = await QdrantVectorStore.fromDocuments(documents , embeddings, {
-                        url: process.env.QUADRANT_URL,
-                        apiKey: process.env.QUADRANT_API_KEY,
-                        collectionName: 'memory-notebookLM-Collection',
-                    });
+      const vectorStore = await QdrantVectorStore.fromDocuments(
+        documents,
+        embeddings,
+        {
+          url: process.env.QUADRANT_URL,
+          apiKey: process.env.QUADRANT_API_KEY,
+          collectionName: "memory-notebookLM-Collection",
+        },
+      );
 
-            
-
-            return 
-
-
-
-         }
-
-
-
-
-
-
-
-
-
-        
-    } catch (error) {
-        console.log(error)
-        return 
-        
+      return;
     }
-}
+  } catch (error) {
+    console.log(error);
+    return;
+  }
+};
 
-export const createMessage = async (req,res)=>{
-    try {
-            await ensurePayloadIndex("memory-notebookLM-Collection", "metadata.userId");
+export const createMessage = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { sourceId } = req.params;
+    const { message } = req.body;
 
-        const userId = req.user._id;
-        const {sourceId} = req.params;
-        const {message} = req.body;
+    const userContext = await fetchMemory(message, userId);
 
-        const userContext = await fetchMemory(message , userId);
-        
-        const user = await User.findById(userId);
+    const user = await User.findById(userId);
 
-        const facts = user.facts ; 
-        let factsText = ""; 
-        if(!facts || facts.length ==0){
-            factsText = "Nothing as of now"
-        }else { 
-            factsText = JSON.stringify(facts)
-        }
+    const facts = user.facts;
+    let factsText = "";
+    if (!facts || facts.length == 0) {
+      factsText = "Nothing as of now";
+    } else {
+      factsText = JSON.stringify(facts);
+    }
 
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "Not Authorized",
+      });
+    }
 
+    if (!sourceId || !message) {
+      return res.status(400).json({
+        success: false,
+        message: "No sourceId or message",
+      });
+    }
 
-        if(!userId){
-            return res.status(400).json({
-                success : false ,
-                message : 'Not Authorized'
-            })
-        }
-
-        if(!sourceId || !message){
-            return res.status(400).json({
-                success : false ,
-                message : 'No sourceId or message'
-            })
-        }
-
-         const rewrittingQuery = `
+    const rewrittingQuery = `
         You are an expert query writter. Fix all the typo's and add more context 
         to the wuery so it can fetch more relevant data.
         Output should be a single string having query
         for example : 'What is asynchronous function'
 
         user query :- ${message}
-         `
-         
+         `;
 
-        const response = await client.chat.completions.create({
-            model: 'gpt-4.1-mini',
-            messages: [{
-                role : 'user',
-                content : rewrittingQuery
-            }],
-        }); 
+    const response = await client.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "user",
+          content: rewrittingQuery,
+        },
+      ],
+    });
 
-         const refinedQuery = response.choices[0].message.content ;
+    const refinedQuery = response.choices[0].message.content;
 
-        const embeddings = new OpenAIEmbeddings({
-            model: 'text-embedding-3-large',
-        });
+    const embeddings = new OpenAIEmbeddings({
+      model: "text-embedding-3-large",
+    });
 
-        const vectorStore = await QdrantVectorStore.fromExistingCollection(
-            embeddings,
-            {
-            url: process.env.QUADRANT_URL,
-            apiKey: process.env.QUADRANT_API_KEY,
-            collectionName: 'notebookLM-Collection',
-            }
-        );
+    const vectorStore = await QdrantVectorStore.fromExistingCollection(
+      embeddings,
+      {
+        url: process.env.QUADRANT_URL,
+        apiKey: process.env.QUADRANT_API_KEY,
+        collectionName: "notebookLM-Collection",
+      },
+    );
 
-        const vectorSearcher = vectorStore.asRetriever({
-            k: 3,
-             filter: {
-                must: [
-                { key: "metadata.userId", match: { value: userId.toString() } },
-                { key: "metadata.sourceId", match: { value: sourceId.toString() } },
-                ],
-            },
-            
-        });
+    const vectorSearcher = vectorStore.asRetriever({
+      k: 3,
+      filter: {
+        must: [
+          { key: "metadata.userId", match: { value: userId.toString() } },
+          { key: "metadata.sourceId", match: { value: sourceId.toString() } },
+        ],
+      },
+    });
 
-        const relevantChunk = await vectorSearcher.invoke(refinedQuery);
+    const relevantChunk = await vectorSearcher.invoke(refinedQuery);
 
-        const gettingBetterChunksPrompt = `
+    const gettingBetterChunksPrompt = `
             You are an expert query writer. Your work is to check the quality of relevant chunks and to find the least relevant chunk. 
             and you have to optimize the prompt such that quality of chunks improve according to the query . The query should be same as 
             the original user's query so that user get's the most accurate answer . 
@@ -561,70 +541,68 @@ export const createMessage = async (req,res)=>{
             user's orignial query :- ${message}
             user's query with fixed typo and more context :- ${refinedQuery}
             relavent chunks fetched :- ${relevantChunk}
-        `
-         const response3 = await client.chat.completions.create({
-            model: 'gpt-4.1-mini',
-            messages: [{
-                role : 'user',
-                content : gettingBetterChunksPrompt
-            }],
-        }); 
+        `;
+    const response3 = await client.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "user",
+          content: gettingBetterChunksPrompt,
+        },
+      ],
+    });
 
-         const refinedQuery2 = response3.choices[0].message.content ;
+    const refinedQuery2 = response3.choices[0].message.content;
 
-         
+    const relevantChunk2 = await vectorSearcher.invoke(refinedQuery2);
 
-        const relevantChunk2 = await vectorSearcher.invoke(refinedQuery2);
-       
+    const allChunks = [...relevantChunk, ...relevantChunk2];
 
+    const freqMap = new Map();
 
-         const allChunks = [...relevantChunk,...relevantChunk2  ];
+    allChunks.forEach((chunk, index) => {
+      const key = JSON.stringify(chunk);
+      if (!freqMap.has(key)) {
+        freqMap.set(key, { count: 1, firstIndex: index });
+      } else {
+        freqMap.get(key).count++;
+      }
+    });
 
-         const freqMap = new Map();
+    const sortedChunks = [...freqMap.entries()].sort((a, b) => {
+      const [chunkA, dataA] = a;
+      const [chunkB, dataB] = b;
+      if (dataB.count !== dataA.count) {
+        return dataB.count - dataA.count;
+      }
 
-         allChunks.forEach((chunk, index)=>{
-            const key = JSON.stringify(chunk)
-            if(!freqMap.has(key)){
-                freqMap.set(key , { count : 1 ,firstIndex : index})
-            }else{
-                freqMap.get(key).count++;
-            }
-         })
+      return dataA.firstIndex - dataB.firstIndex;
+    });
 
-         const sortedChunks = [...freqMap.entries()].sort((a,b)=>{
-            const [chunkA , dataA] = a;
-            const [chunkB , dataB] = b ;
-            if(dataB.count !== dataA.count){
-                return dataB.count - dataA.count;
-            }
+    const priorityChunks = sortedChunks
+      .slice(0, 3)
+      .map(([chunk]) => JSON.parse(chunk));
 
-            return dataA.firstIndex - dataB.firstIndex;
-         })
+    let chat = await Chat.findOne({
+      userId,
+      sourceId,
+    });
 
-         const priorityChunks = sortedChunks.slice(0,3).map(([chunk])=>JSON.parse(chunk));
+    if (!chat) {
+      chat = await Chat.create({
+        userId,
+        sourceId,
+      });
+    }
 
+    let messages = chat.messages || [];
 
-        let chat = await Chat.findOne({
-            userId,
-            sourceId
-        });
+    messages.push({
+      role: "user",
+      content: message,
+    });
 
-        if(!chat){
-            chat= await Chat.create({
-                userId,
-                sourceId
-            })
-        }
-
-        let messages = chat.messages || [];
-
-        messages.push({
-            role: 'user',
-            content : message
-        })
-
-
-        const SYSTEM_PROMPT = `
+    const SYSTEM_PROMPT = `
              You are an AI assistant who helps resolving user query based on the
             context available to you , context can be from text , pdf file , docx file , csv file , text file , url (web) .
 
@@ -653,106 +631,98 @@ export const createMessage = async (req,res)=>{
             
 
 
-        `
-        const systemMessage = {
-            role: "system",
-            content: SYSTEM_PROMPT
-        };
+        `;
+    const systemMessage = {
+      role: "system",
+      content: SYSTEM_PROMPT,
+    };
 
-        let previousChats ;
-        if (messages.length >50){
-            previousChats  = messages.splice(-50);
-        }
-        previousChats = messages ;
-
-        const finalMessages = [systemMessage, ...previousChats];
-
-        const response2 = await client.chat.completions.create({
-            model: 'gpt-4.1-mini',
-            messages: finalMessages,
-        }); 
-
-        const refinedRes = response2.choices[0].message.content ; 
-        messages.push({
-            role : 'assistant',
-            content : refinedRes
-        })
-
-        await addToMemory({
-            user : message , 
-            assistant : refinedRes,
-        },userId)
-
-        chat.messages = messages;
-        await chat.save();
-
-        return res.status(200).json({
-            success: true , 
-            message : 'Received response successfully',
-            response: refinedRes , 
-            messages ,
-            chat
-
-        })
-
-
-
-        
-    } catch (error) {
-        console.log(error)
-        return res.status(500).json({
-            success: false,
-            message: 'Internal error while chatting'
-        })
-        
+    let previousChats;
+    if (messages.length > 50) {
+      previousChats = messages.splice(-50);
     }
-}
+    previousChats = messages;
 
-export const getChats = async (req,res)=>{
-    try {
-         const userId = req.user._id;
-        const {sourceId} = req.params;
-         if(!userId){
-            return res.status(400).json({
-                success : false ,
-                message : 'Not Authorized'
-            })
-        }
+    const finalMessages = [systemMessage, ...previousChats];
 
-        if(!sourceId ){
-            return res.status(400).json({
-                success : false ,
-                message : 'No sourceId '
-            })
-        }
+    const response2 = await client.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: finalMessages,
+    });
 
-        const chats = await Chat.find({
-            userId,
-            sourceId
-        });
-        if(!chats){
-            return res.status(200).json({
-                success: true , 
-                chats,
-                message : "No message in chat"
-            })
-        }
+    const refinedRes = response2.choices[0].message.content;
+    messages.push({
+      role: "assistant",
+      content: refinedRes,
+    });
 
-         return res.status(200).json({
-                success: true , 
-                chats,
-                message : "Messages fetched"
-            })
+    await addToMemory(
+      {
+        user: message,
+        assistant: refinedRes,
+      },
+      userId,
+    );
 
+    chat.messages = messages;
+    await chat.save();
 
-        
-    } catch (error) {
-        console.log(error);
-        return res.status(500).json({
-            success:false ,
-            message : "Internal error while fetching chats"
-        })
-        
-        
+    return res.status(200).json({
+      success: true,
+      message: "Received response successfully",
+      response: refinedRes,
+      messages,
+      chat,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal error while chatting",
+    });
+  }
+};
+
+export const getChats = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { sourceId } = req.params;
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "Not Authorized",
+      });
     }
-}
+
+    if (!sourceId) {
+      return res.status(400).json({
+        success: false,
+        message: "No sourceId ",
+      });
+    }
+
+    const chats = await Chat.find({
+      userId,
+      sourceId,
+    });
+    if (!chats) {
+      return res.status(200).json({
+        success: true,
+        chats,
+        message: "No message in chat",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      chats,
+      message: "Messages fetched",
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal error while fetching chats",
+    });
+  }
+};
