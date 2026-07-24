@@ -66,12 +66,7 @@ async function ensurePayloadIndex(collectionName, fieldName) {
 
 export const uploadFile = async(req, res)=>{
     try {
-         const userId = req.user._id;
-
-        await ensurePayloadIndex("notebookLM-Collection", "metadata.userId");
-await ensurePayloadIndex("notebookLM-Collection", "metadata.sourceId");
-await ensurePayloadIndex("memory-notebookLM-Collection", "metadata.userId");
-        
+         const userId = req.user._id;        
 
         if(!userId){
             return res.status(400).json({
