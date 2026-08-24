@@ -1,0 +1,45 @@
+name: traefik
+
+services:
+  traefik:
+    image: traefik:latest
+    command:
+      - '--api=true'
+      - '--api.dashboard=true'
+      - '--log.level=DEBUG'
+      - '--providers.docker=true'
+      - '--providers.docker.exposedbydefault=false'
+      - '--entrypoints.traefik.address=:8080'
+      - '--entrypoints.web.address=:80'
+      - '--entrypoints.websecure.address=:443'
+      - '--certificatesresolvers.cert-resolver.acme.httpchallenge=true'
+      - '--certificatesresolvers.cert-resolver.acme.httpchallenge.entrypoint=web'
+      - '--certificatesresolvers.cert-resolver.acme.email=yashovardhans321@gmail.com'
+      - '--certificatesresolvers.cert-resolver.acme.storage=/letsencrypt/acme.json'
+      - '--entrypoints.web.http.redirections.entrypoint.to=websecure'
+      - '--entrypoints.web.http.redirections.entrypoint.scheme=https'
+    volumes:
+      - '/var/run/docker.sock:/var/run/docker.sock:ro'
+      - './certificates/letsencrypt:/letsencrypt'
+    labels:
+      traefik.enable: true
+      traefik.port: 8080
+      traefik.http.routers.api.entrypoints: 'websecure'
+      traefik.http.routers.api.service: 'api@internal'
+      traefik.http.routers.api.tls: 'true'
+      traefik.http.routers.api.tls.certresolver: 'cert-resolver'
+    ports:
+      - '80:80'
+      - '443:443'
+    networks:
+      - traefik
+      - project-a-network
+      - traefik-dozzle
+
+networks:
+  traefik:
+    name: traefik
+  project-a-network:
+    name: project-a-network
+  traefik-dozzle:
+    name: traefik-dozzle
