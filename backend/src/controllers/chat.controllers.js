@@ -3,43 +3,11 @@ import { OpenAIEmbeddings } from "@langchain/openai";
 import { QdrantVectorStore } from "@langchain/qdrant";
 import OpenAI from "openai";
 import { Document } from "@langchain/core/documents";
-import Chat from "../models/chat.model.js";
-import { QdrantClient } from "@qdrant/js-client-rest";
-import { log } from "util";
+import Chat from "../../shared/models/chat.model.js";
 import neo4j from "neo4j-driver";
-import User from "../models/user.model.js";
+import User from "../../shared/models/user.model.js";
 
 const client = new OpenAI();
-
-const qdrantClient = new QdrantClient({
-  url: process.env.QUADRANT_URL,
-  apiKey: process.env.QUADRANT_API_KEY,
-});
-
-async function ensurePayloadIndex(collectionName, fieldName) {
-  try {
-    const collection = await qdrantClient.getCollection(collectionName);
-
-    const payloadIndexes =
-      collection.result?.payload_schema || collection.payload_schema || {};
-
-    if (payloadIndexes[fieldName]) {
-      console.log(`✅ Index already exists for ${fieldName}`);
-      return;
-    }
-
-    console.log(`🔨 Creating index for ${fieldName}...`);
-
-    await qdrantClient.createPayloadIndex(collectionName, {
-      field_name: fieldName,
-      field_schema: "keyword",
-    });
-
-    console.log(`✅ Created index for ${fieldName}`);
-  } catch (err) {
-    console.error(`❌ Failed while ensuring index ${fieldName}:`, err);
-  }
-}
 
 const fetchMemory = async (message, userId) => {
   try {

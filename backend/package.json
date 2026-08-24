@@ -13,6 +13,8 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1117.0",
+    "@aws-sdk/s3-request-presigner": "^3.1117.0",
     "@langchain/community": "^0.3.53",
     "@langchain/core": "^0.3.72",
     "@langchain/openai": "^0.6.9",
@@ -20,12 +22,14 @@
     "@langchain/textsplitters": "^0.1.0",
     "@qdrant/js-client-rest": "^1.18.0",
     "bcryptjs": "^3.0.2",
+    "bullmq": "^6.2.0",
     "cheerio": "^1.1.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "d3-dsv": "^2.0.0",
     "dotenv": "^16.4.5",
     "express": "^5.1.0",
+    "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.2",
     "langchain": "^0.3.31",
     "mammoth": "^1.10.0",
@@ -35,6 +39,7 @@
     "neo4j-driver": "^5.28.1",
     "openai": "^4.104.0",
     "pdf-parse": "^1.1.1",
-    "puppeteer": "^24.16.2"
+    "puppeteer": "^24.16.2",
+    "uuid": "^14.0.2"
   }
 }
