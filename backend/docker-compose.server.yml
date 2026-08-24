@@ -5,26 +5,62 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file: .env
     deploy:
       replicas: 1
     networks:
       - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    env_file: .env
+    deploy:
+      replicas: 1
+    networks:
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    volumes:
+      - redis-data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
 
   caddy:
     image: caddy:latest
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     labels:
-      - 'traefik.enable=true'
-      - 'traefik.http.routers.my-router.rule=Host(`chithhi.toenail.in`)'
-      - 'traefik.http.services.my-router.loadbalancer.server.port=80'
-      - 'traefik.http.routers.my-router.entrypoints=websecure'
-      - 'traefik.docker.network=project-a-network'
-      - 'traefik.http.routers.my-router.tls=true'
-      - 'traefik.http.routers.my-router.tls.certresolver=cert-resolver'
+      - "traefik.enable=true"
+      - "traefik.http.routers.my-router.rule=Host(`chithhi.toenail.in`)"
+      - "traefik.http.services.my-router.loadbalancer.server.port=80"
+      - "traefik.http.routers.my-router.entrypoints=websecure"
+      - "traefik.docker.network=project-a-network"
+      - "traefik.http.routers.my-router.tls=true"
+      - "traefik.http.routers.my-router.tls.certresolver=cert-resolver"
     networks:
       - project-a-network
       - internal
+
+volumes:
+  redis-data:
 
 networks:
   internal:

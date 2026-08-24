@@ -1,34 +1,23 @@
-import {Router } from 'express';
-import { isLoggedIn } from '../middlewares/auth.middlewares.js';
-import { getSources, text,  uploadFile, web } from '../controllers/source.controllers.js';
-import multer from "multer";
-import path from "path";
-import fs from "fs";
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadPath = "uploads/";
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath);
-    }
-    cb(null, uploadPath);
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + path.extname(file.originalname));
-  },
-});
-
-const upload = multer({ storage });
-
+import { Router } from "express";
+import { isLoggedIn } from "../middlewares/auth.middlewares.js";
+import {
+  confirmUpload,
+  getPresign,
+  getSources,
+  getStatus,
+  getViewUrl,
+  text2,
+  web2,
+} from "../controllers/source.controllers.js";
 
 const router = Router();
 
-router.post("/text", isLoggedIn , text)
-router.post("/upload", isLoggedIn, upload.single("file"),  uploadFile)
-router.post("/web", isLoggedIn, web)
-router.get("/",isLoggedIn,getSources)
-
-
-
+router.post("/text", isLoggedIn, text2);
+router.post("/presign", isLoggedIn, getPresign);
+router.post("/confirm-upload", isLoggedIn, confirmUpload);
+router.post("/web", isLoggedIn, web2);
+router.get("/", isLoggedIn, getSources);
+router.get("/:sourceId/status", isLoggedIn, getStatus);
+router.get("/:sourceId/view-url", isLoggedIn, getViewUrl);
 
 export default router;
