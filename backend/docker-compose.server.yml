@@ -1,0 +1,33 @@
+name: server-application-a
+
+services:
+  api-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    deploy:
+      replicas: 1
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:latest
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.my-router.rule=Host(`chithhi.toenail.in`)'
+      - 'traefik.http.services.my-router.loadbalancer.server.port=80'
+      - 'traefik.http.routers.my-router.entrypoints=websecure'
+      - 'traefik.docker.network=project-a-network'
+      - 'traefik.http.routers.my-router.tls=true'
+      - 'traefik.http.routers.my-router.tls.certresolver=cert-resolver'
+    networks:
+      - project-a-network
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+  project-a-network:
+    external: true
