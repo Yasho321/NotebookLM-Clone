@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./env.js";
 import { QdrantClient } from "@qdrant/js-client-rest";
 
 const COLLECTION_NAME = "notebookLM-Collection";

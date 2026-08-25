@@ -15,8 +15,9 @@ export default function ChatPanel() {
 
   // Load chat when source changes
   useEffect(() => {
-    if (selectedSource) {
-      loadChatForSource(selectedSource._id);
+    const sourceId = selectedSource?._id || selectedSource?.id;
+    if (sourceId && sourceId !== 'undefined') {
+      loadChatForSource(sourceId);
     }
   }, [selectedSource, loadChatForSource]);
 
@@ -26,12 +27,13 @@ export default function ChatPanel() {
   }, [messages]);
 
   const handleSendMessage = async () => {
-    if (!inputMessage.trim() || !selectedSource || isLoading) return;
+    const sourceId = selectedSource?._id || selectedSource?.id;
+    if (!inputMessage.trim() || !sourceId || isLoading) return;
 
     const message = inputMessage.trim();
     setInputMessage('');
     
-    await sendMessage(message, selectedSource._id);
+    await sendMessage(message, sourceId);
   };
 
   const handleKeyPress = (e) => {

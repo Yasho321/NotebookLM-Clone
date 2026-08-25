@@ -4,9 +4,50 @@ import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, FileText, Link, Upload, Loader2 } from "lucide-react";
+import { Plus, FileText, Link, Upload, Loader2, FileType, FileSpreadsheet, AlertCircle } from "lucide-react";
 import { useSourceStore } from '../stores/sourceStore';
 import toast from 'react-hot-toast';
+
+const getSourceIcon = (type) => {
+  switch (type) {
+    case 'pdf':
+      return <FileText className="w-4 h-4 text-red-400" />;
+    case 'docx':
+      return <FileType className="w-4 h-4 text-blue-400" />;
+    case 'csv':
+      return <FileSpreadsheet className="w-4 h-4 text-green-400" />;
+    case 'text':
+    case 'text-paste':
+      return <FileText className="w-4 h-4 text-muted-foreground" />;
+    case 'link':
+      return <Link className="w-4 h-4 text-muted-foreground" />;
+    default:
+      return <FileText className="w-4 h-4 text-muted-foreground" />;
+  }
+};
+
+const StatusBadge = ({ status }) => {
+  switch (status) {
+    case 'uploading':
+    case 'queued':
+    case 'processing':
+      return (
+        <div className="flex items-center space-x-1">
+          <Loader2 className="w-3 h-3 animate-spin text-info" />
+          <span className="text-xs text-info capitalize">{status}</span>
+        </div>
+      );
+    case 'failed':
+      return (
+        <div className="flex items-center space-x-1">
+          <AlertCircle className="w-3 h-3 text-destructive" />
+          <span className="text-xs text-destructive">Failed</span>
+        </div>
+      );
+    default:
+      return null; // 'completed' — no badge
+  }
+};
 
 export default function SourcePanel() {
   const { sources, selectedSource, isUploading, addTextSource, addFileSource, addUrlSource, selectSource } = useSourceStore();
@@ -167,7 +208,7 @@ export default function SourcePanel() {
         <div className="space-y-2">
           {sources.map((source) => (
             <Card
-              key={source._id}
+              key={source._id || source.id}
               className={`p-3 cursor-pointer transition-all hover:bg-source-hover ${
                 selectedSource?._id === source._id 
                   ? 'bg-accent border-ring' 
@@ -177,17 +218,18 @@ export default function SourcePanel() {
             >
               <div className="flex items-start space-x-2">
                 <div className="flex-shrink-0 mt-1">
-                  {source.type === 'text' && <FileText className="w-4 h-4 text-muted-foreground" />}
-                  {source.type === 'pdf' && <FileText className="w-4 h-4 text-muted-foreground" />}
-                  {source.type === 'link' && <Link className="w-4 h-4 text-muted-foreground" />}
+                  {getSourceIcon(source.type)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">
-                    {source.title || `${source.type} source`}
+                    {source.title || source.originalFileName || `${source.type} source`}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {new Date(source.createdAt).toLocaleDateString()}
-                  </p>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(source.createdAt).toLocaleDateString()}
+                    </p>
+                    <StatusBadge status={source.status} />
+                  </div>
                 </div>
               </div>
             </Card>

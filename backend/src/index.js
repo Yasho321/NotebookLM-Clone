@@ -1,13 +1,11 @@
+import "../shared/libs/env.js";
 import express from "express";
-import dotenv from "dotenv";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import db from "../shared/libs/db.js";
 import authRoutes from "./routes/user.routes.js";
 import sourceRouter from "./routes/source.routes.js";
 import chatRouter from "./routes/chat.routes.js";
-
-dotenv.config();
 
 const app = express();
 

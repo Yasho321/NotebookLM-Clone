@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
-import { FileText, Link, Calendar, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { FileText, Link, Calendar, Sparkles, Loader2, AlertCircle, ExternalLink, FileType, FileSpreadsheet } from "lucide-react";
 import { useSourceStore } from '../stores/sourceStore';
 
 export default function ContentPanel() {
-  const { selectedSource } = useSourceStore();
+  const { selectedSource, getViewUrl } = useSourceStore();
+  const [isLoadingViewUrl, setIsLoadingViewUrl] = useState(false);
 
   if (!selectedSource) {
     return (
@@ -23,6 +26,12 @@ export default function ContentPanel() {
 
   const getSourceIcon = (type) => {
     switch (type) {
+      case 'pdf':
+        return <FileText className="w-5 h-5 text-red-400" />;
+      case 'docx':
+        return <FileType className="w-5 h-5 text-blue-400" />;
+      case 'csv':
+        return <FileSpreadsheet className="w-5 h-5 text-green-400" />;
       case 'link':
         return <Link className="w-5 h-5" />;
       default:
@@ -40,6 +49,32 @@ export default function ContentPanel() {
     });
   };
 
+  const handleViewFile = async () => {
+    const sourceId = selectedSource?._id || selectedSource?.id;
+    if (!sourceId) return;
+    setIsLoadingViewUrl(true);
+    const url = await getViewUrl(sourceId);
+    setIsLoadingViewUrl(false);
+    if (url) {
+      window.open(url, '_blank');
+    }
+  };
+
+  const isFileType = ['pdf', 'docx', 'csv', 'text'].includes(selectedSource.type);
+
+  const getStatusMessage = (status) => {
+    switch (status) {
+      case 'uploading':
+        return 'Uploading to cloud...';
+      case 'queued':
+        return 'Waiting in queue...';
+      case 'processing':
+        return 'Analyzing content...';
+      default:
+        return 'Processing source...';
+    }
+  };
+
   return (
     <div className="flex-1 bg-background p-6 overflow-y-auto">
       <div className="max-w-4xl mx-auto">
@@ -51,7 +86,7 @@ export default function ContentPanel() {
             </div>
             <div className="flex-1">
               <h1 className="text-2xl font-bold text-foreground mb-2">
-                {selectedSource.title || `${selectedSource.type} Source`}
+                {selectedSource.title || selectedSource.originalFileName || `${selectedSource.type} Source`}
               </h1>
               <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                 <div className="flex items-center space-x-1">
@@ -59,7 +94,11 @@ export default function ContentPanel() {
                   <span>{formatDate(selectedSource.createdAt)}</span>
                 </div>
                 <div className="flex items-center space-x-1">
-                  <div className="w-2 h-2 bg-success rounded-full"></div>
+                  <div className={`w-2 h-2 rounded-full ${
+                    selectedSource.status === 'completed' ? 'bg-success' :
+                    selectedSource.status === 'failed' ? 'bg-destructive' :
+                    'bg-info animate-pulse'
+                  }`}></div>
                   <span className="capitalize">{selectedSource.type}</span>
                 </div>
               </div>
@@ -73,12 +112,42 @@ export default function ContentPanel() {
                   {selectedSource.rawURL}
                 </a>
               )}
+              {selectedSource.webURL && (
+                <a
+                  href={selectedSource.webURL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-info hover:underline mt-2 inline-block"
+                >
+                  {selectedSource.webURL}
+                </a>
+              )}
+              {/* View Original File button — only for completed file sources */}
+              {isFileType && selectedSource.status === 'completed' && selectedSource.s3Key && (
+                <div className="mt-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleViewFile}
+                    disabled={isLoadingViewUrl}
+                    className="text-xs"
+                  >
+                    {isLoadingViewUrl ? (
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    ) : (
+                      <ExternalLink className="w-3 h-3 mr-1" />
+                    )}
+                    View Original File
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </Card>
 
-        {/* Summary Section */}
-        {selectedSource.summary && (
+        {/* Status-specific content */}
+        {selectedSource.status === 'completed' && selectedSource.summary && (
+          /* Summary Section — completed sources */
           <Card className="p-6 bg-card border-border">
             <div className="flex items-center space-x-2 mb-4">
               <Sparkles className="w-5 h-5 text-info" />
@@ -92,12 +161,36 @@ export default function ContentPanel() {
           </Card>
         )}
 
-        {/* Processing Status */}
-        {!selectedSource.summary && (
+        {selectedSource.status === 'failed' && (
+          /* Failed status */
+          <Card className="p-6 bg-card border-border border-destructive/30">
+            <div className="flex items-center space-x-3">
+              <AlertCircle className="w-6 h-6 text-destructive flex-shrink-0" />
+              <div>
+                <h3 className="text-sm font-semibold text-destructive">Processing Failed</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {selectedSource.errorMessage || "An unknown error occurred during processing."}
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {(selectedSource.status === 'uploading' || selectedSource.status === 'queued' || selectedSource.status === 'processing') && (
+          /* In-progress status */
+          <Card className="p-6 bg-card border-border">
+            <div className="flex items-center justify-center space-x-3 text-muted-foreground py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-info" />
+              <span className="text-sm">{getStatusMessage(selectedSource.status)}</span>
+            </div>
+          </Card>
+        )}
+
+        {selectedSource.status === 'completed' && !selectedSource.summary && (
+          /* Completed but no summary (edge case) */
           <Card className="p-6 bg-card border-border">
             <div className="flex items-center justify-center space-x-2 text-muted-foreground">
-              <div className="w-4 h-4 border-2 border-info border-t-transparent rounded-full animate-spin"></div>
-              <span>Processing source...</span>
+              <span>Source processed. No summary available.</span>
             </div>
           </Card>
         )}
