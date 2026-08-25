@@ -1,9 +1,7 @@
+import "../shared/libs/env.js";
 import { Worker } from "bullmq";
 import { processSource } from "./processors/sourceProcessor.js";
 import db from "../shared/libs/db.js";
-import dotenv from "dotenv";
-
-dotenv.config({ path: "../.env" });
 
 // Connect to MongoDB
 db();

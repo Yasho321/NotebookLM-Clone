@@ -53,9 +53,7 @@ export async function processFile(s3Key, mimeType) {
       break;
 
     case "text/csv":
-      loader = new CSVLoader(blob, {
-        column: "text",
-      });
+      loader = new CSVLoader(blob);
       break;
 
     case "text/plain":
