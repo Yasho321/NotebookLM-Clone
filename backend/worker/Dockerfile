@@ -3,7 +3,7 @@ WORKDIR /app/worker
 
 # Install worker dependencies
 COPY worker/package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 FROM node:22-alpine AS runner
 WORKDIR /app
