@@ -17,6 +17,7 @@ app.use(
       "http://localhost:5173",
       "https://notebook-lm-clone-one.vercel.app",
       "https://chithhi.yasho.tech",
+      "https://chithhi-lm.vercel.app",
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
