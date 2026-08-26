@@ -22,6 +22,7 @@
     "cheerio": "^1.1.2",
     "d3-dsv": "^2.0.0",
     "dotenv": "^16.4.5",
+    "ioredis": "^5.11.1",
     "langchain": "^0.3.31",
     "mammoth": "^1.10.0",
     "mongoose": "^8.17.2",
