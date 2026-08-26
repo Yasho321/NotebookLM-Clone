@@ -19,7 +19,7 @@ services:
       - 80
     labels:
       - 'traefik.enable=true'
-      - 'traefik.http.routers.logs-svc.rule=Host(`logs.toenail.in`)'
+      - 'traefik.http.routers.logs-svc.rule=Host(`logs.yasho.tech`)'
       - 'traefik.http.services.logs-svc.loadbalancer.server.port=80'
       - 'traefik.http.routers.logs-svc.entrypoints=websecure'
       - 'traefik.docker.network=traefik-dozzle'
