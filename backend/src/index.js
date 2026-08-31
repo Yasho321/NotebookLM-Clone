@@ -16,7 +16,7 @@ app.use(
     origin: [
       "http://localhost:5173",
       "https://notebook-lm-clone-one.vercel.app",
-      "https://chithhi.yasho.tech",
+      "https://chithhilm.yasho.tech",
       "https://chithhi-lm.vercel.app",
     ],
     credentials: true,
