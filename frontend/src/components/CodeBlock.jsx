@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Button } from "@/components/ui/button";
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useThemeStore } from '../stores/themeStore';
 
 export default function CodeBlock({ children, className, language }) {
   const [copied, setCopied] = useState(false);
+  const theme = useThemeStore((s) => s.theme);
   
   const handleCopy = async () => {
     try {
@@ -19,32 +20,42 @@ export default function CodeBlock({ children, className, language }) {
   };
 
   return (
-    <div className="relative group my-4">
-      <div className="absolute top-2 right-2 z-10">
-        <Button
+    <div className="relative group my-4 border border-border rounded-lg overflow-hidden">
+      {/* Language label + copy button */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/30">
+        <span className="text-label text-muted-foreground" style={{ fontSize: '10px' }}>
+          {language?.toUpperCase() || 'CODE'}
+        </span>
+        <button
           onClick={handleCopy}
-          size="sm"
-          variant="ghost"
           className={cn(
-            "h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity",
-            "bg-background/80 hover:bg-background border border-border"
+            "flex items-center gap-1.5 px-2 py-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-all cursor-pointer text-xs",
+            "opacity-0 group-hover:opacity-100"
           )}
         >
           {copied ? (
-            <Check className="h-3 w-3 text-green-500" />
+            <>
+              <Check className="h-3 w-3 text-green-500" />
+              <span className="text-green-500">Copied</span>
+            </>
           ) : (
-            <Copy className="h-3 w-3" />
+            <>
+              <Copy className="h-3 w-3" />
+              <span>Copy</span>
+            </>
           )}
-        </Button>
+        </button>
       </div>
       <SyntaxHighlighter
-        language={language || 'javascript'}
-        style={oneDark}
+        language={language || 'text'}
+        style={theme === 'dark' ? oneDark : oneLight}
         customStyle={{
           margin: 0,
-          borderRadius: '0.5rem',
-          fontSize: '0.875rem',
-          lineHeight: '1.5',
+          borderRadius: 0,
+          fontSize: 'var(--font-size-sm)',
+          lineHeight: '1.6',
+          padding: '16px',
+          background: theme === 'dark' ? '#1A1A1A' : '#FAFAF8',
         }}
         className={className}
       >

@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { Send, Bot, User, MessageSquare, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Send, Bot, User, MessageSquare } from "lucide-react";
 import { useChatStore } from '../stores/chatStore';
 import { useSourceStore } from '../stores/sourceStore';
 import MessageContent from './MessageContent';
@@ -27,13 +26,10 @@ export default function ChatPanel() {
   }, [messages]);
 
   const handleSendMessage = async () => {
-    const sourceId = selectedSource?._id || selectedSource?.id;
-    if (!inputMessage.trim() || !sourceId || isLoading) return;
-
-    const message = inputMessage.trim();
+    if (!inputMessage.trim() || isLoading) return;
+    const msg = inputMessage;
     setInputMessage('');
-    
-    await sendMessage(message, sourceId);
+    await sendMessage(msg, selectedSource?._id || selectedSource?.id);
   };
 
   const handleKeyPress = (e) => {
@@ -43,18 +39,32 @@ export default function ChatPanel() {
     }
   };
 
+  // No source selected state
   if (!selectedSource) {
     return (
-      <div className="w-[500px] bg-chat-bg border-l border-border h-full flex flex-col">
-        <div className="p-4 border-b border-border">
-          <h2 className="text-lg font-semibold text-foreground">Chat</h2>
-        </div>
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <MessageSquare className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-sm text-muted-foreground">
-              Select a source to start chatting
+      <div className="h-full flex flex-col bg-background">
+        <div className="flex-1 flex items-center justify-center px-6">
+          <div className="text-center max-w-xs animate-fade-in-up">
+            <MessageSquare className="w-8 h-8 mx-auto text-muted-foreground/40 mb-3" />
+            <p className="text-meta text-muted-foreground mb-1">
+              Select or ingest a source
             </p>
+            <p className="text-muted-foreground" style={{ fontSize: '11px' }}>
+              Awaiting context...
+            </p>
+          </div>
+        </div>
+        {/* Input — disabled */}
+        <div className="px-5 py-4 border-t border-border flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="Ingest sources to chat..."
+              disabled
+              className="bg-muted/30 border border-border/60 rounded-lg px-3.5 py-2 text-sm text-muted-foreground placeholder:text-muted-foreground/40 flex-1 cursor-not-allowed"
+            />
+            <Button size="sm" disabled className="h-10 px-3.5 opacity-40 cursor-not-allowed">
+              <Send className="w-4 h-4" />
+            </Button>
           </div>
         </div>
       </div>
@@ -62,25 +72,16 @@ export default function ChatPanel() {
   }
 
   return (
-    <div className="w-[500px] bg-chat-bg border-l border-border h-full flex flex-col">
-      {/* Header */}
-      <div className="p-4 border-b border-border">
-        <h2 className="text-lg font-semibold text-foreground">Chat</h2>
-        <p className="text-sm text-muted-foreground truncate">
-          {selectedSource.title || `${selectedSource.type} source`}
-        </p>
-      </div>
-
+    <div className="h-full flex flex-col bg-background">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
         {messages.length === 0 && (
-          <div className="text-center py-8">
-            <Bot className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-sm text-muted-foreground mb-2">
-              Start a conversation about your source
+          <div className="text-center py-12">
+            <p className="text-meta text-muted-foreground mb-1">
+              Start a dialogue about your source
             </p>
-            <p className="text-xs text-muted-foreground">
-              Ask questions, request summaries, or explore the content
+            <p className="text-muted-foreground" style={{ fontSize: '11px' }}>
+              Ask questions, request summaries, or explore
             </p>
           </div>
         )}
@@ -88,52 +89,26 @@ export default function ChatPanel() {
         {messages.map((message, index) => (
           <div
             key={index}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            className={`animate-fade-in-up ${message.role === 'user' ? 'text-right' : 'text-left'}`}
+            style={{ animationDelay: '0s', animationDuration: '0.3s' }}
           >
-            <div
-              className={`flex items-start space-x-2 max-w-[85%] ${
-                message.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''
-              }`}
-            >
-              <div
-                className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                  message.role === 'user' 
-                    ? 'bg-primary text-primary-foreground' 
-                    : 'bg-accent text-accent-foreground'
-                }`}
-              >
-                {message.role === 'user' ? (
-                  <User className="w-4 h-4" />
-                ) : (
-                  <Bot className="w-4 h-4" />
-                )}
+            {message.role === 'user' ? (
+              <p className="text-body inline-block text-right max-w-[90%]" style={{ color: 'var(--chat-user)' }}>
+                {message.content}
+              </p>
+            ) : (
+              <div className="max-w-[95%]">
+                <MessageContent content={message.content} />
               </div>
-              <Card
-                className={`p-3 ${
-                  message.role === 'user'
-                    ? 'bg-chat-user border-border'
-                    : 'bg-chat-assistant border-border'
-                }`}
-              >
-                 <MessageContent content={message.content} />
-              </Card>
-            </div>
+            )}
           </div>
         ))}
 
         {isLoading && (
-          <div className="flex justify-start">
-            <div className="flex items-start space-x-2 max-w-[85%]">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center">
-                <Bot className="w-4 h-4" />
-              </div>
-              <Card className="p-3 bg-chat-assistant border-border">
-                <div className="flex items-center space-x-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm text-muted-foreground">Thinking...</span>
-                </div>
-              </Card>
-            </div>
+          <div className="flex items-center gap-1 py-2">
+            <div className="thinking-dot"></div>
+            <div className="thinking-dot"></div>
+            <div className="thinking-dot"></div>
           </div>
         )}
 
@@ -141,21 +116,22 @@ export default function ChatPanel() {
       </div>
 
       {/* Input */}
-      <div className="p-4 border-t border-border">
-        <div className="flex space-x-2">
+      <div className="px-5 py-4 border-t border-border flex-shrink-0">
+        <div className="flex items-center gap-2">
           <Input
-            placeholder="Ask about this source..."
+            placeholder="Ask about your sources..."
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyPress}
             disabled={isLoading}
-            className="bg-input border-border"
+            className="bg-background border border-border rounded-lg px-3.5 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-foreground focus:ring-2 focus:ring-foreground/10 transition-all flex-1 h-10"
           />
           <Button
             onClick={handleSendMessage}
             disabled={!inputMessage.trim() || isLoading}
             size="icon"
-            className="bg-primary hover:bg-primary/80"
+            className="h-10 w-10 rounded-lg shadow-xs flex-shrink-0"
+            title="Send message"
           >
             <Send className="w-4 h-4" />
           </Button>

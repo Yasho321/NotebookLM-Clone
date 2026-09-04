@@ -1,73 +1,65 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useSourceStore } from '../stores/sourceStore';
 import AuthForm from '../components/AuthForm';
 import Header from '../components/Header';
-import SourcePanel from '../components/SourcePanel';
-import ContentPanel from '../components/ContentPanel';
-import ChatPanel from '../components/ChatPanel';
-import { Loader2 } from 'lucide-react';
-import { Toaster } from 'react-hot-toast';
+import WorkspaceLayout from '../components/WorkspaceLayout';
+import LandingPage from './LandingPage';
+
+const LoadingScreen = () => (
+  <div className="min-h-screen bg-background flex items-center justify-center">
+    <div className="flex flex-col items-center gap-4">
+      <div className="flex gap-1">
+        <div className="thinking-dot"></div>
+        <div className="thinking-dot"></div>
+        <div className="thinking-dot"></div>
+      </div>
+      <span className="text-meta text-muted-foreground tracking-wide uppercase">Loading</span>
+    </div>
+  </div>
+);
 
 const Index = () => {
   const { authUser, isCheckingAuth, checkAuth } = useAuthStore();
   const { fetchSources } = useSourceStore();
+  const location = useLocation();
+  const navigate = useNavigate();
+
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
+
   useEffect(() => {
     if (authUser) {
       fetchSources();
+      // If user is authed and on / or /auth, redirect to /workspace
+      if (location.pathname === '/' || location.pathname === '/auth') {
+        navigate('/workspace', { replace: true });
+      }
+    } else if (!isCheckingAuth && location.pathname === '/workspace') {
+      navigate('/auth', { replace: true });
     }
-  }, [authUser, fetchSources]);
+  }, [authUser, isCheckingAuth, fetchSources, location.pathname, navigate]);
 
   if (isCheckingAuth) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="flex items-center space-x-2">
-          <Loader2 className="w-6 h-6 animate-spin text-primary" />
-          <span className="text-foreground">Loading...</span>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
+  // Not authenticated
   if (!authUser) {
-    return (
-      <>
-        <AuthForm />
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: 'hsl(var(--card))',
-              color: 'hsl(var(--foreground))',
-              border: '1px solid hsl(var(--border))',
-            },
-          }}
-        />
-      </>
-    );
+    // Show auth form on /auth or /workspace, landing on /
+    if (location.pathname === '/auth' || location.pathname === '/workspace') {
+      return <AuthForm />;
+    }
+    return <LandingPage />;
   }
 
+  // Authenticated — show workspace
   return (
-    <div className="h-screen bg-background flex flex-col">
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
       <Header />
-      <div className="flex-1 flex overflow-hidden">
-        <SourcePanel />
-        <ContentPanel />
-        <ChatPanel />
-      </div>
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          style: {
-            background: 'hsl(var(--card))',
-            color: 'hsl(var(--foreground))',
-            border: '1px solid hsl(var(--border))',
-          },
-        }}
-      />
+      <WorkspaceLayout />
     </div>
   );
 };
