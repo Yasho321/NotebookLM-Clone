@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { axiosInstance } from '../lib/axios';
-import toast from 'react-hot-toast';
+import { toast } from 'sonner';
 
 export const useAuthStore = create((set) => ({
   authUser: null,
@@ -8,6 +8,12 @@ export const useAuthStore = create((set) => ({
   isLoading: false,
 
   checkAuth: async () => {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      set({ authUser: null, isCheckingAuth: false });
+      return;
+    }
+
     try {
       set({ isCheckingAuth: true });
       const response = await axiosInstance.get('/auth/me');
@@ -16,6 +22,7 @@ export const useAuthStore = create((set) => ({
       });
     } catch (error) {
       console.error("Check auth error:", error);
+      localStorage.removeItem('authToken');
       set({ 
         authUser: null
       });
@@ -30,7 +37,9 @@ export const useAuthStore = create((set) => ({
       const response = await axiosInstance.post('/auth/login', credentials);
       
       const { token, user } = response.data;
-      localStorage.setItem('authToken', token);
+      if (token) {
+        localStorage.setItem('authToken', token);
+      }
       
       set({ 
         authUser: user
@@ -54,7 +63,9 @@ export const useAuthStore = create((set) => ({
       const response = await axiosInstance.post('/auth/register', credentials);
       
       const { token, user } = response.data;
-      localStorage.setItem('authToken', token);
+      if (token) {
+        localStorage.setItem('authToken', token);
+      }
       
       set({ 
         authUser: user
@@ -79,8 +90,31 @@ export const useAuthStore = create((set) => ({
       console.error("Logout error:", error);
     } finally {
       localStorage.removeItem('authToken');
+      sessionStorage.clear();
+
+      // Clear accessible cookies
+      try {
+        document.cookie.split(";").forEach((c) => {
+          document.cookie = c
+            .replace(/^ +/, "")
+            .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        });
+      } catch (e) {
+        // ignore
+      }
+
+      // Clear axios default Authorization header if present
+      if (axiosInstance.defaults?.headers?.common) {
+        delete axiosInstance.defaults.headers.common['Authorization'];
+      }
+
       set({ authUser: null });
       toast.success("Logged out successfully");
+
+      // Redirect if currently on workspace
+      if (window.location.pathname !== '/' && window.location.pathname !== '/auth') {
+        window.location.href = '/auth';
+      }
     }
   }
 }));

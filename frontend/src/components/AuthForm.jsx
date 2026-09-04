@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
-import { Loader2, Brain } from "lucide-react";
+import { Loader2, Sun, Moon, BookOpen } from "lucide-react";
 import { useAuthStore } from '../stores/authStore';
+import { useThemeStore } from '../stores/themeStore';
+import { useNavigate } from 'react-router-dom';
 
 export default function AuthForm() {
   const { login, register, isLoading } = useAuthStore();
+  const { theme, toggleTheme } = useThemeStore();
+  const navigate = useNavigate();
+  const [mode, setMode] = useState('login');
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({ name: '', email: '', password: '' });
 
@@ -16,7 +19,7 @@ export default function AuthForm() {
     e.preventDefault();
     const result = await login(loginForm);
     if (result.success) {
-      // Auth store will handle the redirect
+      navigate('/workspace', { replace: true });
     }
   };
 
@@ -24,130 +27,184 @@ export default function AuthForm() {
     e.preventDefault();
     const result = await register(registerForm);
     if (result.success) {
-      // Auth store will handle the redirect
+      navigate('/workspace', { replace: true });
     }
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md bg-card border-border">
-        <CardHeader className="text-center">
-          <div className="flex items-center justify-center space-x-2 mb-4">
-            <Brain className="w-8 h-8 text-primary" />
-            <span className="text-2xl font-bold text-foreground">Chithhi LM</span>
+    <div className="min-h-screen bg-background flex flex-col">
+      {/* Minimal top bar */}
+      <nav className="flex items-center justify-between px-8 py-5 border-b border-border">
+        <a
+          href="/"
+          className="text-label text-muted-foreground tracking-widest hover:text-foreground px-2.5 py-1 rounded-md hover:bg-muted/60 transition-colors"
+          style={{ fontSize: '11px' }}
+        >
+          ← BACK
+        </a>
+        <a href="/" className="flex items-center gap-2 group">
+          <div className="w-6 h-6 rounded-md bg-primary text-primary-foreground flex items-center justify-center shadow-xs flex-shrink-0 group-hover:opacity-90 transition-opacity">
+            <BookOpen className="w-3 h-3" />
           </div>
-          <CardTitle className="text-foreground">Welcome</CardTitle>
-          <CardDescription className="text-muted-foreground">
-            Sign in to your account or create a new one
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 bg-muted">
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="register">Register</TabsTrigger>
-            </TabsList>
+          <span className="text-foreground tracking-tight font-semibold text-sm">Chithhi</span>
+          <span className="text-[10px] font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/60">
+            LM
+          </span>
+        </a>
+        <button
+          onClick={toggleTheme}
+          className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors rounded-lg cursor-pointer"
+          aria-label="Toggle theme"
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark' ? (
+            <Sun className="w-4 h-4" />
+          ) : (
+            <Moon className="w-4 h-4" />
+          )}
+        </button>
+      </nav>
 
-            <TabsContent value="login">
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="login-email">Email</Label>
-                  <Input
-                    id="login-email"
-                    type="email"
-                    placeholder="your@email.com"
-                    value={loginForm.email}
-                    onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
-                    required
-                    className="bg-input border-border"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="login-password">Password</Label>
-                  <Input
-                    id="login-password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={loginForm.password}
-                    onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                    required
-                    className="bg-input border-border"
-                  />
-                </div>
-                <Button
-                  type="submit"
-                  className="w-full bg-primary hover:bg-primary/80"
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Signing in...
-                    </>
-                  ) : (
-                    'Sign In'
-                  )}
-                </Button>
-              </form>
-            </TabsContent>
+      {/* Auth form */}
+      <div className="flex-1 flex items-center justify-center px-6 py-16">
+        <div className="w-full max-w-md animate-fade-in-up p-8 border border-border/80 bg-card rounded-xl shadow-sm">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <p className="text-label mb-2" style={{ color: 'var(--accent)', fontSize: '11px', letterSpacing: '0.12em' }}>
+              {mode === 'login' ? 'ACCESS CREDENTIALS' : 'CREATE IDENTITY'}
+            </p>
+            <h2 className="text-display text-foreground">
+              {mode === 'login' ? 'Sign In' : 'Register'}
+            </h2>
+          </div>
 
-            <TabsContent value="register">
-              <form onSubmit={handleRegister} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="register-name">Name</Label>
-                  <Input
-                    id="register-name"
-                    type="text"
-                    placeholder="Your Name"
-                    value={registerForm.name}
-                    onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })}
-                    required
-                    className="bg-input border-border"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="register-email">Email</Label>
-                  <Input
-                    id="register-email"
-                    type="email"
-                    placeholder="your@email.com"
-                    value={registerForm.email}
-                    onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })}
-                    required
-                    className="bg-input border-border"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="register-password">Password</Label>
-                  <Input
-                    id="register-password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={registerForm.password}
-                    onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })}
-                    required
-                    className="bg-input border-border"
-                  />
-                </div>
-                <Button
-                  type="submit"
-                  className="w-full bg-primary hover:bg-primary/80"
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Creating account...
-                    </>
-                  ) : (
-                    'Create Account'
-                  )}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+          {/* Login Form */}
+          {mode === 'login' && (
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div className="space-y-1.5">
+                <Label htmlFor="login-email" className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                  Email Address
+                </Label>
+                <Input
+                  id="login-email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={loginForm.email}
+                  onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                  required
+                  className="h-11 px-3.5 bg-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-foreground focus:ring-2 focus:ring-foreground/10 transition-all outline-none"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="login-password" className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                  Password
+                </Label>
+                <Input
+                  id="login-password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={loginForm.password}
+                  onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                  required
+                  className="h-11 px-3.5 bg-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-foreground focus:ring-2 focus:ring-foreground/10 transition-all outline-none"
+                />
+              </div>
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full mt-6 text-sm font-medium tracking-wide shadow-sm"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  'Sign In'
+                )}
+              </Button>
+            </form>
+          )}
+
+          {/* Register Form */}
+          {mode === 'register' && (
+            <form onSubmit={handleRegister} className="space-y-5">
+              <div className="space-y-1.5">
+                <Label htmlFor="register-name" className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                  Display Name
+                </Label>
+                <Input
+                  id="register-name"
+                  type="text"
+                  placeholder="Your Name"
+                  value={registerForm.name}
+                  onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })}
+                  required
+                  className="h-11 px-3.5 bg-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-foreground focus:ring-2 focus:ring-foreground/10 transition-all outline-none"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="register-email" className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                  Email Address
+                </Label>
+                <Input
+                  id="register-email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={registerForm.email}
+                  onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })}
+                  required
+                  className="h-11 px-3.5 bg-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-foreground focus:ring-2 focus:ring-foreground/10 transition-all outline-none"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="register-password" className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                  Password
+                </Label>
+                <Input
+                  id="register-password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={registerForm.password}
+                  onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })}
+                  required
+                  className="h-11 px-3.5 bg-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-foreground focus:ring-2 focus:ring-foreground/10 transition-all outline-none"
+                />
+              </div>
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full mt-6 text-sm font-medium tracking-wide shadow-sm"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Creating account...
+                  </>
+                ) : (
+                  'Create Account'
+                )}
+              </Button>
+            </form>
+          )}
+
+          {/* Toggle */}
+          <div className="text-center mt-6 pt-4 border-t border-border/50">
+            <p className="text-sm text-muted-foreground">
+              {mode === 'login' ? "Don't have an account?" : "Already have an account?"}
+              <button
+                type="button"
+                onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+                className="ml-2 text-foreground hover:underline underline-offset-4 transition-colors font-semibold cursor-pointer"
+              >
+                {mode === 'login' ? 'Register' : 'Sign In'}
+              </button>
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
