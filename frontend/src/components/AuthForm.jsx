@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Sun, Moon, BookOpen } from "lucide-react";
+import { Loader2, Sun, Moon } from "lucide-react";
 import { useAuthStore } from '../stores/authStore';
 import { useThemeStore } from '../stores/themeStore';
 import { useNavigate } from 'react-router-dom';
@@ -43,9 +43,11 @@ export default function AuthForm() {
           ← BACK
         </a>
         <a href="/" className="flex items-center gap-2 group">
-          <div className="w-6 h-6 rounded-md bg-primary text-primary-foreground flex items-center justify-center shadow-xs flex-shrink-0 group-hover:opacity-90 transition-opacity">
-            <BookOpen className="w-3 h-3" />
-          </div>
+          <img
+            src="/logo.png"
+            alt="Chithhi LM Logo"
+            className="w-6 h-6 object-contain drop-shadow-xs dark:drop-shadow-[0_2px_6px_rgba(255,255,255,0.15)] group-hover:scale-105 transition-transform duration-200 flex-shrink-0"
+          />
           <span className="text-foreground tracking-tight font-semibold text-sm">Chithhi</span>
           <span className="text-[10px] font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/60">
             LM
@@ -70,6 +72,13 @@ export default function AuthForm() {
         <div className="w-full max-w-md animate-fade-in-up p-8 border border-border/80 bg-card rounded-xl shadow-sm">
           {/* Header */}
           <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center mb-3">
+              <img
+                src="/logo.png"
+                alt="Chithhi LM"
+                className="w-12 h-12 object-contain drop-shadow-sm dark:drop-shadow-[0_3px_12px_rgba(255,255,255,0.18)] select-none hover:scale-105 transition-transform duration-200"
+              />
+            </div>
             <p className="text-label mb-2" style={{ color: 'var(--accent)', fontSize: '11px', letterSpacing: '0.12em' }}>
               {mode === 'login' ? 'ACCESS CREDENTIALS' : 'CREATE IDENTITY'}
             </p>

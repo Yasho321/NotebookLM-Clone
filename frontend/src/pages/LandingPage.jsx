@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  BookOpen,
   FileText,
   MessageSquare,
   Sparkles,
@@ -244,13 +243,15 @@ export default function LandingPage() {
           {/* Brand Lockup */}
           <div
             onClick={() => navigate('/')}
-            className="flex items-center gap-2.5 cursor-pointer group"
+            className="flex items-center gap-2.5 cursor-pointer group select-none"
           >
-            <div className="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow-xs flex-shrink-0 group-hover:opacity-90 transition-opacity">
-              <BookOpen className="w-4 h-4" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="Chithhi LM Logo"
+              className="w-8 h-8 object-contain drop-shadow-xs dark:drop-shadow-[0_2px_8px_rgba(255,255,255,0.15)] group-hover:scale-105 transition-transform duration-200 flex-shrink-0"
+            />
             <div className="flex items-center gap-1.5">
-              <span className="text-foreground tracking-tight font-semibold text-base">Chithhi</span>
+              <span className="text-foreground tracking-tight font-semibold text-base group-hover:text-foreground/90 transition-colors">Chithhi</span>
               <span className="text-[10px] font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/70">
                 LM
               </span>
@@ -755,8 +756,12 @@ export default function LandingPage() {
       <section className="px-6 py-16 max-w-5xl mx-auto w-full z-10">
         <div className="p-10 md:p-14 rounded-2xl border border-border/80 bg-gradient-to-b from-card to-muted/40 shadow-xl text-center relative overflow-hidden">
           <div className="max-w-2xl mx-auto relative z-10">
-            <div className="w-10 h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center mx-auto mb-6 shadow-md">
-              <BookOpen className="w-5 h-5" />
+            <div className="w-16 h-16 mx-auto mb-6 flex items-center justify-center">
+              <img
+                src="/logo.png"
+                alt="Chithhi LM Logo"
+                className="w-16 h-16 object-contain drop-shadow-md dark:drop-shadow-[0_4px_16px_rgba(255,255,255,0.18)] hover:scale-105 transition-transform duration-200"
+              />
             </div>
             <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-foreground mb-4">
               Begin your source-grounded research now
@@ -795,9 +800,11 @@ export default function LandingPage() {
       <footer className="border-t border-border mt-auto px-8 py-12 bg-background z-10">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow-xs">
-              <BookOpen className="w-3.5 h-3.5" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="Chithhi LM Logo"
+              className="w-7 h-7 object-contain drop-shadow-xs dark:drop-shadow-[0_2px_8px_rgba(255,255,255,0.12)] flex-shrink-0"
+            />
             <div className="flex items-center gap-1.5">
               <span className="text-foreground tracking-tight font-semibold text-sm">Chithhi LM</span>
               <span className="text-[10px] text-muted-foreground font-mono">v1.2.0</span>

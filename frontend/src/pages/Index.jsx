@@ -9,13 +9,18 @@ import LandingPage from './LandingPage';
 
 const LoadingScreen = () => (
   <div className="min-h-screen bg-background flex items-center justify-center">
-    <div className="flex flex-col items-center gap-4">
-      <div className="flex gap-1">
+    <div className="flex flex-col items-center gap-4 animate-fade-in">
+      <img
+        src="/logo.png"
+        alt="Chithhi LM Logo"
+        className="w-12 h-12 object-contain animate-pulse drop-shadow-sm dark:drop-shadow-[0_4px_16px_rgba(255,255,255,0.18)] select-none"
+      />
+      <div className="flex gap-1 mt-1">
         <div className="thinking-dot"></div>
         <div className="thinking-dot"></div>
         <div className="thinking-dot"></div>
       </div>
-      <span className="text-meta text-muted-foreground tracking-wide uppercase">Loading</span>
+      <span className="text-meta text-muted-foreground tracking-wide uppercase text-xs">Loading Workspace</span>
     </div>
   </div>
 );
