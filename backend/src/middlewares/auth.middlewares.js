@@ -29,7 +29,7 @@ export const isLoggedIn = async (req, res, next) => {
     const user = await User.findById(decoded.id).select("-password");
 
     if (!user) {
-      res.status(400).json({
+      return res.status(400).json({
         success: false,
         message: "User Not Found via token",
       });
@@ -45,4 +45,19 @@ export const isLoggedIn = async (req, res, next) => {
       message: "Error while authentic token",
     });
   }
+};
+
+export const ADMIN_EMAIL = "yashovardhans321@chithilm.com";
+
+/**
+ * Middleware restricting access exclusively to the designated admin email.
+ */
+export const isAdmin = (req, res, next) => {
+  if (!req.user || req.user.email?.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden: Access restricted to admin (yashovardhans321@chithilm.com)",
+    });
+  }
+  next();
 };

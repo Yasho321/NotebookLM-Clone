@@ -1,696 +1,802 @@
 import "dotenv/config";
-import { OpenAIEmbeddings } from "@langchain/openai";
-import { QdrantVectorStore } from "@langchain/qdrant";
-import OpenAI from "openai";
-import { Document } from "@langchain/core/documents";
+import mongoose from "mongoose";
+import { Agent, run } from "@openai/agents";
 import Chat from "../../shared/models/chat.model.js";
-import neo4j from "neo4j-driver";
-import User from "../../shared/models/user.model.js";
+import Source from "../../shared/models/source.model.js";
+import {
+  enqueueChatSummaryIfNeeded,
+  enqueueMemoryExtractionIfNeeded,
+  formatChatContextWithSummary,
+} from "../utils/chatContext.js";
+import { fetchOptimizedMemory } from "../utils/fetchMemory.js";
+import { retrievalPipeline } from "../retrieval/pipeline.js";
+import { createTraceSession } from "../utils/traceMiddleware.js";
 
-const client = new OpenAI();
+// ─────────────────────────────────────────────────────────────────────────────
+// OpenAI Agent SDK Chat Agent definition
+// ─────────────────────────────────────────────────────────────────────────────
+const chatAssistantAgent = new Agent({
+  name: "chithhi-chat-agent",
+  model: "gpt-4.1-mini",
+  instructions: `You are Chithhi, an AI research assistant analyzing documents and pair-programming with the user.
+Answer the user's questions clearly, accurately, and strictly grounded in the provided document evidence and personal context.
 
-const fetchMemory = async (message, userId) => {
-  try {
-    const URI = process.env.NEO4J_URI;
-    const USER = process.env.NEO4J_USERNAME;
-    const PASSWORD = process.env.NEO4J_PASSWORD;
-    let driver = neo4j.driver(URI, neo4j.auth.basic(USER, PASSWORD));
+Citations & Grounding:
+- When using facts from source documents, cite them inline as [Source: <filename>, Page <number>] or [Source: <filename>].
+- If multiple sources are referenced, attribute each fact to its respective source.
+- Do not invent citations or make claims unsupported by the evidence.
+- If the retrieval engine indicates that context was insufficient (shouldRefuse), politely explain: "I couldn't find enough information in your sources to answer this question." You may then offer general knowledge with an explicit disclaimer.
+- Maintain a helpful, analytical, and professional tone with Markdown bullets and formatting where appropriate.`,
+});
 
-    let { records, summary } = await driver.executeQuery(
-      `
-            MATCH (u:User {id: $userId})-[r*1..]-(n)
-            RETURN u, r, n
-        `,
-      { userId: userId.toString() },
-      { database: process.env.NEO4J_DATABASE },
-    );
-    let graphMap = "";
-    // Loop through results
-    for (let record of records) {
-      const user = record.get("u");
-      const rels = record.get("r");
-      const nodes = record.get("n");
+// ─────────────────────────────────────────────────────────────────────────────
+// In-memory registry of active SSE streams keyed by "userId:chatId"
+// Used by the /stop endpoint to abort in-flight generation.
+// ─────────────────────────────────────────────────────────────────────────────
+const activeStreams = new Map();
 
-      graphMap += `User node: ${JSON.stringify(user.properties)} \n`;
-      graphMap += `Connected nodes: ${JSON.stringify(nodes.properties)} \n`;
-      graphMap += `Relationships: ${rels.map((r) => r.type).join(", ")} \n`;
-      graphMap += `Available keys: ${record.keys}\n`;
-    }
+/**
+ * Builds the full prompt from memory, retrieval, and conversation context.
+ * Extracted as a shared helper so both createMessage and regenerateMessage can reuse it.
+ *
+ * @param {string} message - The user's question
+ * @param {string} userId - User ID
+ * @param {string[]} activeSources - Array of source IDs to search
+ * @param {Array} previousHistory - Prior messages
+ * @param {string|null} rollingSummary - Compressed rolling summary
+ * @param {object|null} trace - Optional trace session for observability
+ * @returns {Promise<{ prompt: string, citations: Array, retrievalResult: object }>}
+ */
+async function buildPrompt(message, userId, activeSources, previousHistory, rollingSummary, trace = null) {
+  // 1. Concurrently execute optimized memory fetch + modular retrieval pipeline
+  const tStart = Date.now();
+  const [memoryData, retrievalResult] = await Promise.all([
+    fetchOptimizedMemory(message, userId),
+    retrievalPipeline(message, activeSources, userId, previousHistory),
+  ]);
 
-    await driver.close();
-
-    const embeddings = new OpenAIEmbeddings({
-      model: "text-embedding-3-large",
-    });
-
-    const vectorStore = await QdrantVectorStore.fromExistingCollection(
-      embeddings,
-      {
-        url: process.env.QUADRANT_URL,
-        apiKey: process.env.QUADRANT_API_KEY,
-        collectionName: "memory-notebookLM-Collection",
-      },
-    );
-
-    const vectorSearcher = vectorStore.asRetriever({
-      k: 3,
-      filter: {
-        must: [{ key: "metadata.userId", match: { value: userId.toString() } }],
-      },
-    });
-
-    const relevantChunk = await vectorSearcher.invoke(message);
-
-    let relevantChunkText = "";
-
-    if (!relevantChunk || relevantChunk.length === 0) {
-      relevantChunkText = "No relevant information found in vector memory.";
-    } else {
-      relevantChunkText = JSON.stringify(relevantChunk);
-    }
-
-    let relevantMaps = "";
-
-    if (graphMap.trim() === "") {
-      relevantMaps =
-        "No relevant information and relationships found in graph map.";
-    } else {
-      const relevantMapsPrompt = `
-            You are an expert data fetching AI assistant your work is to fetch the relevant maps and relations , connected nodes and Available keys 
-            according to the relavent chunks given . 
-            Give the most relevant data and filter out all unnecessary stuff . 
-            -Do not add any other context in this except the graphmap data 
-            -Relevant chunks should be used to cut down the graph map content not to add in it
-            - Do not add any context from your side 
-            Relavent Chunks :- ${relevantChunkText}
-            Whole Graph Map :- ${graphMap} 
-         `;
-
-      const response = await client.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [
-          {
-            role: "user",
-            content: relevantMapsPrompt,
-          },
-        ],
-      });
-
-      relevantMaps = response.choices[0].message.content;
-    }
-
-    const userContext = `
-            Relations and informations from graph :- ${relevantMaps}
-            Relevant chunks of information about the user :- ${relevantChunkText}
-         `;
-
-    return userContext;
-  } catch (error) {
-    console.log(error);
-    return "No context as of now";
+  if (trace) {
+    trace.setStepDuration("memoryMs", Date.now() - tStart);
+    trace.setRetrievalMetrics(retrievalResult.metadata);
   }
-};
 
-const addToMemory = async (message, userId) => {
-  try {
-    const { user, assistant } = message;
+  const { userContext, factsText } = memoryData;
 
-    const isLongTermPrompt = `
-            You are an expert in finding whether the message should be kept in Longterm memory or shortterm memory .
-            You will get a message having a double message conversation from user and assistant both your work is to find whether , 
-            the conversation have something that should be stored in a long term memory or not , 
-            Your response should be a single word either :- 'yes' or 'no'
-            Some few shot examples :- 
-            - { user : My birthday is on 27th June , assistant : Someone's birthday is coming in a month , Pretty excited for it }
-              response :- yes 
-            - { user : what's 2x3 , assistant : 6 }
-              response :- no
-            - { user : Pav Bhaji is my favorite food , assistant : Oh! great , you got a good taste}
-              response :- yes 
-            - { user : I recently got admission in NIT Raipur , assistant : Congratulations ! hoping for a bright future }
-              response :- yes 
-            -{ user :  What is polymorphism in OOPS , give answer in short , assistant : Polymorphism is the ability of objects to take on multiple forms, allowing the same method to behave differently depending on the object.}
-              response : no 
+  // 2. Format source context & build structured citations
+  let sourceEvidenceText = "";
+  let citations = [];
 
-              You have to give response for the conversation given below 
+  if (retrievalResult.docs && retrievalResult.docs.length > 0) {
+    sourceEvidenceText = retrievalResult.docs
+      .map((doc, idx) => {
+        const file = doc.metadata?.originalFileName || "Document";
+        const page = doc.metadata?.pageNumber ? ` (Page ${doc.metadata.pageNumber})` : "";
+        const content = doc.content || doc.pageContent || "";
+        return `[Source Passage ${idx + 1}: ${file}${page}]\n${content}`;
+      })
+      .join("\n\n---\n\n");
 
-              Conversation :- {
-                user : ${user} ,
-                assistant : ${assistant}
-              }
-
-              IMPORTANT :- 
-              - Response should be a simple yes if it has something that should be stored in Long Term , If nothing in the message should be stored 
-                in long term memory than give a simple no as a response 
-              - Your response should only be a single word either  yes or no
-         `;
-
-    const response = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "user",
-          content: isLongTermPrompt,
-        },
-      ],
-    });
-
-    const isLongTerm = response.choices[0].message.content;
-
-    if (isLongTerm.trim().toLowerCase() == "no") {
-      return;
-    }
-
-    const isFactualPrompt = `
-            You are an expert in finding whether the message should be kept in Factual longterm memory or Episodic longterm memory .
-            You will get a message having a double message conversation from user and assistant both your work is to find whether , 
-            the conversation have something that should be stored in a factual long term memory or not , 
-            Your response should be a single word either :- 'yes' or 'no'
-            Some few shot examples :- 
-            - { user : My favorite color is blue , assistant : Got it! Blue is your favorite color. }
-              response :- yes 
-            - { user : I went trekking in Manali last summer. , assistant : Wow, sounds fun! You went trekking in Manali last summer.How was your Experience }
-              response :- no
-            - { user : I work at Google as a backend developer , assistant :Okay, so you’re a backend developer at Google , How's work life balance there}
-              response :- yes 
-            - { user : I have turned into a vegetarian , assistant : Great a step towards kindness and a great culinary choice }
-              response :- yes 
-            -{ user :  I just read Gunaho ke devta last weekend, and I can't how deeply I am impacted by it emotionally . , assistant : Yeah , It is a book that shakes your inner core makes you feel empty , silent and leaves with a bit of pain.}
-              response : no 
-
-              You have to give response for the conversation given below 
-
-              Conversation :- {
-                user : ${user} ,
-                assistant : ${assistant}
-              }
-
-              IMPORTANT :- 
-              - Response should be a simple yes if it has something that should be stored in Factual Long Term , If nothing in the message should be stored 
-                in Factual long term memory than give a simple no as a response 
-              - Your response should only be a single word either  yes or no
-
-         `;
-
-    const response2 = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "user",
-          content: isFactualPrompt,
-        },
-      ],
-    });
-
-    const isFactual = response2.choices[0].message.content;
-
-    if (isFactual == "yes") {
-      const factsPrompt = `
-                You are an expert data retriever , you retrieve all the important data in as much small sentence possible cutting of all the unnecessary grammer and language 
-                just the data that's needed . 
-                Now you have to retrieve the factual long term memory data from a  double message conversation from user and assistant . The data should 
-                be precise and accurate. 
-                Caution :- 
-                - Do not add anything of your own 
-                - Output should be a string having the factual data 
-
-                Some few shot examples :- 
-                - { user : My favorite color is blue , assistant : Got it! Blue is your favorite color. }
-                  response :- User's favorite color blue
-                - { user : I work at Google as a backend developer , assistant :Okay, so you’re a backend developer at Google , How's work life balance there}
-                  response :- User backend developer at google
-                - { user : I have turned into a vegetarian , assistant : Great a step towards kindness and a great culinary choice }
-                  response :- user turned veg
-
-                You have to give response for the conversation given below 
-
-                Conversation :- {
-                    user : ${user} ,
-                    assistant : ${assistant}
-                }
-                
-                Caution :- 
-                - Do not add anything of your own 
-                - Output should be a string having the factual data 
-                 
-                
-            `;
-
-      const response = await client.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [
-          {
-            role: "user",
-            content: factsPrompt,
-          },
-        ],
-      });
-
-      const fact = response.choices[0].message.content;
-      const userdb = await User.findByIdAndUpdate(
-        userId,
-        {
-          $push: { facts: fact },
-        },
-        {
-          new: true,
-          upsert: true,
-        },
-      );
-
-      return;
-    } else {
-      const URI = process.env.NEO4J_URI;
-      const USER = process.env.NEO4J_USERNAME;
-      const PASSWORD = process.env.NEO4J_PASSWORD;
-      let driver = neo4j.driver(URI, neo4j.auth.basic(USER, PASSWORD));
-      let { records, summary } = await driver.executeQuery(
-        `
-               MERGE (u:User {id: $userId})
-               WITH u
-               OPTIONAL MATCH (u)-[r*1..]-(n)
-               RETURN u, r, n
-
-            `,
-        { userId: userId.toString() },
-        { database: process.env.NEO4J_DATABASE },
-      );
-      let graphMap = "";
-      // Loop through results
-      for (let record of records) {
-        const user = record.get("u");
-        const rels = record.get("r");
-        const nodes = record.get("n");
-
-        if (user) {
-          graphMap += `User node: ${JSON.stringify(user.properties)} \n`;
-        }
-
-        if (nodes) {
-          graphMap += `Connected nodes: ${JSON.stringify(nodes.properties)} \n`;
-        }
-
-        if (rels && rels.length > 0) {
-          graphMap += `Relationships: ${rels.map((r) => r.type).join(", ")} \n`;
-        }
-
-        graphMap += `Available keys: ${record.keys}\n`;
-      }
-
-      const epsPrompt1 = `
-                You are an AI assistant expert in fetching the episodic long term memory and  writing  Cypher queries for the same in neo4j graph db , write cypher queries to create the relations 
-                among the data which can be retrieved later as a episodic long term memory . Write as such that it will create a node if it didn't already exist 
-                Already present relation of the user :- 
-                ${graphMap} 
-
-                User node should be something like :- User {id: $userId}
-
-                Some few shot examples :- 
-                - { user : I went trekking in Manali last summer. , assistant : Wow, sounds fun! You went trekking in Manali last summer. }
-                response :- MERGE (u:User {id: $userId})  // create user if not exists
-                            MERGE (place:Place {name: 'Manali'}) // create place if not exists
-                            MERGE (u)-[r:traveledTo]->(place) 
-                            ON CREATE SET r.event = 'Trekking', r.season = 'Summer'
-                            RETURN u, place, r
-
-                - { user : I watched Interstellar last weekend, and it blew my mind. , assistant : Got it! You watched Interstellar last weekend. }
-                response :- MERGE (u:User {id: $userId})
-                            MERGE (m:Movie {title: 'Interstellar'})
-                            MERGE (u)-[r:watchedMovie]->(m)
-                            RETURN u, m, r
-
-                - { user : I tried baking a chocolate cake yesterday, and it turned out great., assistant : Nice! You baked a chocolate cake yesterday.}
-                response :- MERGE (u:User {id: $userId})
-                            MERGE (dish:Dish {name: 'Chocolate Cake'})
-                            MERGE (u)-[r:cooked]->(dish)
-                            RETURN u, dish, r
-
-                Now make cypher query of the episodic memory of the given conversation keeping in mind already present relations in the graph :-
-                Conversation :- {
-                    user : ${user} , 
-                    assistant : ${assistant}
-                }
-
-                IMPORTANT :- 
-                - Only give query there should be no wrapper text around it 
-                - There should nothing in the response except query , no mark down , no extra punctuation "forward slash n" for new line , nothing 
-                  only and only cypher query
-
-            `;
-      const response = await client.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [
-          {
-            role: "user",
-            content: epsPrompt1,
-          },
-        ],
-      });
-
-      const cypherQuery = response.choices[0].message.content;
-
-      const cypherRes = await driver.executeQuery(
-        cypherQuery,
-        { userId: userId.toString() },
-        { database: process.env.NEO4J_DATABASE_NAME },
-      );
-
-      await driver.close();
-
-      const epsPrompt2 = `
-                You are an AI assistant expert in fetching the episodic long term memory and  giving the important information with all the noises cut down so that it can 
-                be stored in a vector DB sementically .
-                
-                Some of the few short examples :- 
-                - { user : I went trekking in Manali last summer. , assistant : Wow, sounds fun! You went trekking in Manali last summer. }
-                response :- User traveled to Manali for trekking last summer.
-                - { user : I watched Interstellar last weekend, and it blew my mind. , assistant : Got it! You watched Interstellar last weekend. }
-                response :- User watched the movie Interstellar last weekend.
-                - { user : I tried baking a chocolate cake yesterday, and it turned out great., assistant : Nice! You baked a chocolate cake yesterday.}
-                response :- User baked a chocolate cake yesterday.
-
-                Here is the conversation for which you have to give a response :- 
-                Conversation :- {
-                    user : ${user} , 
-                    assistant : ${assistant}
-                }
-
-                IMPORTANT :- 
-                - Only give response which needs to go in the vector db , no noise or wrapper text  
-
-            `;
-      const response2 = await client.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [
-          {
-            role: "user",
-            content: epsPrompt2,
-          },
-        ],
-      });
-
-      const indexingContent = response2.choices[0].message.content;
-
-      const embeddings = new OpenAIEmbeddings({
-        model: "text-embedding-3-large",
-      });
-
-      const documents = [
-        new Document({
-          pageContent: indexingContent,
-          metadata: {
-            userId: userId.toString(),
-          },
-        }),
-      ];
-
-      const vectorStore = await QdrantVectorStore.fromDocuments(
-        documents,
-        embeddings,
-        {
-          url: process.env.QUADRANT_URL,
-          apiKey: process.env.QUADRANT_API_KEY,
-          collectionName: "memory-notebookLM-Collection",
-        },
-      );
-
-      return;
-    }
-  } catch (error) {
-    console.log(error);
-    return;
+    citations = retrievalResult.docs.map((doc) => ({
+      sourceId:
+        doc.sourceId && mongoose.Types.ObjectId.isValid(doc.sourceId)
+          ? doc.sourceId
+          : null,
+      originalFileName: doc.metadata?.originalFileName || "Document",
+      pageNumber: doc.metadata?.pageNumber || 1,
+      chunkId:
+        doc.chunkId && mongoose.Types.ObjectId.isValid(doc.chunkId)
+          ? doc.chunkId
+          : null,
+      snippet: (doc.content || doc.pageContent || "").slice(0, 200),
+    }));
+  } else if (retrievalResult.strategy === "DIRECT_ANSWER") {
+    sourceEvidenceText = "Direct conversational query — no document retrieval needed.";
+  } else {
+    sourceEvidenceText = "No relevant source passages found in the selected documents.";
   }
-};
 
-export const createMessage = async (req, res) => {
+  if (trace) {
+    trace.addEvent("pipeline:result", {
+      strategy: retrievalResult.strategy,
+      shouldRefuse: retrievalResult.shouldRefuse,
+      candidateCount: retrievalResult.docs?.length || 0,
+      evidenceSummary: sourceEvidenceText.slice(0, 500),
+    });
+  }
+
+  // 3. Layer 1 Context Pruning: Combine rolling summary with last 50 messages
+  const { recentMessages, summaryPromptBlock } = formatChatContextWithSummary(
+    previousHistory,
+    rollingSummary,
+    { maxRecentTurns: 50 }
+  );
+
+  const formattedDialogue = recentMessages
+    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+    .join("\n\n");
+
+  const prompt = `
+${summaryPromptBlock}
+USER FACTS (Persistent Profile):
+${factsText || "None recorded"}
+
+USER EPISODIC & GRAPH CONTEXT:
+${userContext || "None recorded"}
+
+RETRIEVED DOCUMENT EVIDENCE (${retrievalResult.strategy}):
+${sourceEvidenceText}
+${retrievalResult.shouldRefuse ? "\nNOTE: Retrieval confidence is below threshold (< 3). Please inform the user that sources lack this information.\n" : ""}
+
+RECENT CONVERSATION (Last 50 turns):
+${formattedDialogue || "No previous turns"}
+
+USER QUESTION:
+${message}
+    `.trim();
+
+  return { prompt, citations, retrievalResult };
+}
+
+/**
+ * Streams an agent response to the client via SSE.
+ * Handles AbortController, error recovery, and cleanup.
+ *
+ * @param {object} res - Express response object
+ * @param {string} prompt - Full prompt to send to agent
+ * @param {AbortController} abortController - Controller for cancellation
+ * @returns {Promise<string>} The full accumulated response text
+ */
+async function streamAgentResponse(res, prompt, abortController) {
+  let fullText = "";
+
+  // Run the agent in streaming mode, passing the AbortSignal
+  const streamResult = await run(chatAssistantAgent, prompt, {
+    stream: true,
+    signal: abortController.signal,
+  });
+
+  // Get text stream of deltas
+  const textStream = streamResult.toTextStream();
+
+  // Pipe text chunks as SSE events
+  for await (const chunk of textStream) {
+    // If aborted mid-stream, stop sending
+    if (abortController.signal.aborted) {
+      break;
+    }
+
+    const token = typeof chunk === 'string'
+      ? chunk
+      : Buffer.isBuffer(chunk)
+        ? chunk.toString('utf-8')
+        : String(chunk || '');
+
+    if (token) {
+      fullText += token;
+      res.write(`data: ${JSON.stringify({ type: "token", content: token })}\n\n`);
+    }
+  }
+
+  return fullText;
+}
+
+/**
+ * Finds the chat by ID and validates ownership.
+ * Returns the chat document or sends a 404 and returns null.
+ *
+ * @param {string} chatId - Chat document ID
+ * @param {string} userId - Authenticated user ID
+ * @param {object} res - Express response object
+ * @returns {Promise<object|null>} Chat document or null if not found/unauthorized
+ */
+async function findChatOrFail(chatId, userId, res) {
+  if (!chatId) {
+    res.status(400).json({ success: false, message: "Missing chatId" });
+    return null;
+  }
+
+  const chat = await Chat.findById(chatId);
+
+  if (!chat) {
+    res.status(404).json({ success: false, message: "Chat not found" });
+    return null;
+  }
+
+  if (chat.userId.toString() !== userId.toString()) {
+    res.status(403).json({ success: false, message: "Not authorized to access this chat" });
+    return null;
+  }
+
+  return chat;
+}
+
+/**
+ * Sets standard SSE headers and flushes them.
+ * @param {object} res - Express response object
+ */
+function setSSEHeaders(res) {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // Disable proxy buffering (nginx)
+  res.flushHeaders();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST / — Create a new chat with selected sources
+// ─────────────────────────────────────────────────────────────────────────────
+export const createChat = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { sourceId } = req.params;
-    const { message } = req.body;
-
-    const userContext = await fetchMemory(message, userId);
-
-    const user = await User.findById(userId);
-
-    const facts = user.facts;
-    let factsText = "";
-    if (!facts || facts.length == 0) {
-      factsText = "Nothing as of now";
-    } else {
-      factsText = JSON.stringify(facts);
-    }
+    const { sourceIds, title } = req.body;
 
     if (!userId) {
+      return res.status(400).json({ success: false, message: "Not Authorized" });
+    }
+
+    const uniqueSourceIds = [
+      ...new Set(
+        (Array.isArray(sourceIds) ? sourceIds : [])
+          .filter((id) => id && mongoose.Types.ObjectId.isValid(id))
+          .map((id) => id.toString())
+      ),
+    ];
+
+    if (uniqueSourceIds.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Not Authorized",
+        message: "At least one valid sourceId is required",
       });
     }
 
-    if (!sourceId || !message) {
+    // Validate that all sourceIds exist and belong to this user
+    const sources = await Source.find({
+      _id: { $in: uniqueSourceIds },
+      userId,
+    }).select("_id title originalFileName type");
+
+    if (sources.length !== uniqueSourceIds.length) {
       return res.status(400).json({
         success: false,
-        message: "No sourceId or message",
+        message: "One or more source IDs are invalid or don't belong to you",
       });
     }
 
-    const rewrittingQuery = `
-        You are an expert query writter. Fix all the typo's and add more context 
-        to the wuery so it can fetch more relevant data.
-        Output should be a single string having query
-        for example : 'What is asynchronous function'
-
-        user query :- ${message}
-         `;
-
-    const response = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "user",
-          content: rewrittingQuery,
-        },
-      ],
-    });
-
-    const refinedQuery = response.choices[0].message.content;
-
-    const embeddings = new OpenAIEmbeddings({
-      model: "text-embedding-3-large",
-    });
-
-    const vectorStore = await QdrantVectorStore.fromExistingCollection(
-      embeddings,
-      {
-        url: process.env.QUADRANT_URL,
-        apiKey: process.env.QUADRANT_API_KEY,
-        collectionName: "notebookLM-Collection",
-      },
-    );
-
-    const vectorSearcher = vectorStore.asRetriever({
-      k: 3,
-      filter: {
-        must: [
-          { key: "metadata.userId", match: { value: userId.toString() } },
-          { key: "metadata.sourceId", match: { value: sourceId.toString() } },
-        ],
-      },
-    });
-
-    const relevantChunk = await vectorSearcher.invoke(refinedQuery);
-
-    const gettingBetterChunksPrompt = `
-            You are an expert query writer. Your work is to check the quality of relevant chunks and to find the least relevant chunk. 
-            and you have to optimize the prompt such that quality of chunks improve according to the query . The query should be same as 
-            the original user's query so that user get's the most accurate answer . 
-            Output should be a single string that will be the optimized query . 
-            for example :- 'What is asynchronous functions in javascript'
-            user's orignial query :- ${message}
-            user's query with fixed typo and more context :- ${refinedQuery}
-            relavent chunks fetched :- ${relevantChunk}
-        `;
-    const response3 = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "user",
-          content: gettingBetterChunksPrompt,
-        },
-      ],
-    });
-
-    const refinedQuery2 = response3.choices[0].message.content;
-
-    const relevantChunk2 = await vectorSearcher.invoke(refinedQuery2);
-
-    const allChunks = [...relevantChunk, ...relevantChunk2];
-
-    const freqMap = new Map();
-
-    allChunks.forEach((chunk, index) => {
-      const key = JSON.stringify(chunk);
-      if (!freqMap.has(key)) {
-        freqMap.set(key, { count: 1, firstIndex: index });
-      } else {
-        freqMap.get(key).count++;
-      }
-    });
-
-    const sortedChunks = [...freqMap.entries()].sort((a, b) => {
-      const [chunkA, dataA] = a;
-      const [chunkB, dataB] = b;
-      if (dataB.count !== dataA.count) {
-        return dataB.count - dataA.count;
-      }
-
-      return dataA.firstIndex - dataB.firstIndex;
-    });
-
-    const priorityChunks = sortedChunks
-      .slice(0, 3)
-      .map(([chunk]) => JSON.parse(chunk));
-
-    let chat = await Chat.findOne({
+    const chat = await Chat.create({
       userId,
-      sourceId,
+      sourceIds: uniqueSourceIds,
+      title: title || null,
     });
 
-    if (!chat) {
-      chat = await Chat.create({
-        userId,
-        sourceId,
-      });
-    }
-
-    let messages = chat.messages || [];
-
-    messages.push({
-      role: "user",
-      content: message,
-    });
-
-    const SYSTEM_PROMPT = `
-             You are an AI assistant who helps resolving user query based on the
-            context available to you , context can be from text , pdf file , docx file , csv file , text file , url (web) .
-
-            Only ans based on the available context only.
-
-            give sources as well if web give relevant url's 
-
-            Factual context about user :- 
-            ${factsText}
-
-            Episodic context about user :- 
-            ${userContext}
-
-            Context on source provided:
-            ${JSON.stringify(priorityChunks)}
-
-            - Context about user is just to give answers on questions about user and to give a personalize touch to the answers given 
-              do not use it as a context to answer any user query . 
-            - context about user should give personalized touch to the user 
-            - Answer to the queries should be provided by the context on source , and not the user context 
-
-            IMPORTANT :- 
-            - I repeat do not answer anything whose context is not provided even if you have knowledge about it, 
-            
-
-            
-
-
-        `;
-    const systemMessage = {
-      role: "system",
-      content: SYSTEM_PROMPT,
-    };
-
-    let previousChats;
-    if (messages.length > 50) {
-      previousChats = messages.splice(-50);
-    }
-    previousChats = messages;
-
-    const finalMessages = [systemMessage, ...previousChats];
-
-    const response2 = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: finalMessages,
-    });
-
-    const refinedRes = response2.choices[0].message.content;
-    messages.push({
-      role: "assistant",
-      content: refinedRes,
-    });
-
-    await addToMemory(
-      {
-        user: message,
-        assistant: refinedRes,
-      },
-      userId,
-    );
-
-    chat.messages = messages;
-    await chat.save();
-
-    return res.status(200).json({
+    return res.status(201).json({
       success: true,
-      message: "Received response successfully",
-      response: refinedRes,
-      messages,
-      chat,
+      message: "Chat created",
+      chat: {
+        _id: chat._id,
+        sourceIds: chat.sourceIds,
+        title: chat.title,
+        messages: chat.messages,
+        createdAt: chat.createdAt,
+        updatedAt: chat.updatedAt,
+      },
+      sources, // Return source metadata so frontend can display them
     });
   } catch (error) {
-    console.log(error);
+    console.error("❌ Error in createChat:", error);
     return res.status(500).json({
       success: false,
-      message: "Internal error while chatting",
+      message: "Failed to create chat",
+      error: error.message,
     });
   }
 };
 
-export const getChats = async (req, res) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// GET / — List all chats for the authenticated user
+// ─────────────────────────────────────────────────────────────────────────────
+export const listChats = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { sourceId } = req.params;
+
     if (!userId) {
-      return res.status(400).json({
-        success: false,
-        message: "Not Authorized",
-      });
+      return res.status(400).json({ success: false, message: "Not Authorized" });
     }
 
-    if (!sourceId) {
-      return res.status(400).json({
-        success: false,
-        message: "No sourceId ",
-      });
-    }
-
-    const chats = await Chat.find({
-      userId,
-      sourceId,
-    });
-    if (!chats) {
-      return res.status(200).json({
-        success: true,
-        chats,
-        message: "No message in chat",
-      });
-    }
+    const chats = await Chat.find({ userId })
+      .select("sourceIds title rollingSummary createdAt updatedAt")
+      .populate("sourceIds", "title originalFileName type status")
+      .sort({ updatedAt: -1 });
 
     return res.status(200).json({
       success: true,
       chats,
-      message: "Messages fetched",
+      message: "Chats fetched",
     });
   } catch (error) {
-    console.log(error);
+    console.error("❌ Error in listChats:", error);
     return res.status(500).json({
       success: false,
-      message: "Internal error while fetching chats",
+      message: "Failed to list chats",
+      error: error.message,
+    });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /:chatId/message — Send a message (SSE streaming)
+// ─────────────────────────────────────────────────────────────────────────────
+export const createMessage = async (req, res) => {
+  const abortController = new AbortController();
+  let streamKey = null;
+  let trace = null;
+  let fullText = "";
+
+  try {
+    const userId = req.user._id;
+    const { chatId } = req.params;
+    const { message } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, message: "Not Authorized" });
+    }
+
+    if (!message) {
+      return res.status(400).json({ success: false, message: "No message provided" });
+    }
+
+    // ── Find and validate chat ownership ─────────────────────────────────
+    const chat = await findChatOrFail(chatId, userId, res);
+    if (!chat) return; // Response already sent by findChatOrFail
+
+    const activeSources = chat.sourceIds;
+    const previousHistory = chat.messages || [];
+
+    // ── Start Execution Trace Session ───────────────────────────────────
+    trace = createTraceSession(userId, chatId, message);
+
+    // ── Set SSE headers ──────────────────────────────────────────────────
+    setSSEHeaders(res);
+
+    // ── Register abort on client disconnect ──────────────────────────────
+    streamKey = `${userId}:${chatId}`;
+    activeStreams.set(streamKey, abortController);
+
+    req.on("close", () => {
+      abortController.abort();
+      activeStreams.delete(streamKey);
+    });
+
+    // ── Build the full prompt ────────────────────────────────────────────
+    const { prompt, citations, retrievalResult } = await buildPrompt(
+      message,
+      userId,
+      activeSources,
+      previousHistory,
+      chat.rollingSummary,
+      trace
+    );
+
+    // ── Send retrieval metadata as first SSE event (including traceId) ───
+    res.write(
+      `data: ${JSON.stringify({
+        type: "metadata",
+        traceId: trace.traceId,
+        retrievalMetadata: retrievalResult.metadata,
+        citations,
+      })}\n\n`
+    );
+
+    // ── Stream the agent response token-by-token ─────────────────────────
+    const tGenStart = Date.now();
+    fullText = await streamAgentResponse(res, prompt, abortController);
+    trace.setStepDuration("generationMs", Date.now() - tGenStart);
+
+    const refinedRes = fullText.trim();
+
+    // ── Persist messages to DB ───────────────────────────────────────────
+    chat.messages.push({ role: "user", content: message });
+    chat.messages.push({ role: "assistant", content: refinedRes, citations });
+    await chat.save();
+
+    // ── Asynchronously complete execution trace in background ────────────
+    trace.complete({ response: refinedRes });
+
+    // ── Fire-and-forget background workers ───────────────────────────────
+    enqueueMemoryExtractionIfNeeded(chat, userId).catch((err) =>
+      console.error("Failed to enqueue memory extraction:", err)
+    );
+    enqueueChatSummaryIfNeeded(chat, userId).catch((err) =>
+      console.error("Failed to enqueue chat summary:", err)
+    );
+
+    // ── Send completion event and end stream ─────────────────────────────
+    res.write(
+      `data: ${JSON.stringify({
+        type: "done",
+        traceId: trace.traceId,
+        fullResponse: refinedRes,
+        citations,
+        messages: chat.messages,
+      })}\n\n`
+    );
+    res.end();
+  } catch (error) {
+    if (trace) {
+      trace.complete({ response: fullText || "", error });
+    }
+
+    // If the stream was aborted intentionally (stop generation), send a clean stop event
+    if (abortController.signal.aborted) {
+      try {
+        res.write(
+          `data: ${JSON.stringify({ type: "stopped", message: "Generation stopped by user" })}\n\n`
+        );
+        res.end();
+      } catch {
+        // Response may already be closed
+      }
+      return;
+    }
+
+    console.error("❌ Error in createMessage:", error);
+
+    // If headers already sent (SSE mode), send error as SSE event
+    if (res.headersSent) {
+      try {
+        res.write(
+          `data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`
+        );
+        res.end();
+      } catch {
+        // Response may already be closed
+      }
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: "Internal error while chatting",
+        error: error.message,
+      });
+    }
+  } finally {
+    // Cleanup: remove from active streams
+    if (streamKey) {
+      activeStreams.delete(streamKey);
+    }
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /:chatId/stop — Stop in-flight generation
+// ─────────────────────────────────────────────────────────────────────────────
+export const stopGeneration = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { chatId } = req.params;
+
+    if (!userId || !chatId) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing userId or chatId",
+      });
+    }
+
+    const streamKey = `${userId}:${chatId}`;
+    const controller = activeStreams.get(streamKey);
+
+    if (controller) {
+      controller.abort();
+      activeStreams.delete(streamKey);
+
+      // The SSE handler's catch block will handle sending the "stopped" event
+      return res.status(200).json({
+        success: true,
+        message: "Generation stopped",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "No active generation to stop",
+    });
+  } catch (error) {
+    console.error("❌ Error in stopGeneration:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to stop generation",
+      error: error.message,
+    });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /:chatId/regenerate — Remove last assistant message and re-generate
+// ─────────────────────────────────────────────────────────────────────────────
+export const regenerateMessage = async (req, res) => {
+  const abortController = new AbortController();
+  let streamKey = null;
+  let trace = null;
+  let fullText = "";
+
+  try {
+    const userId = req.user._id;
+    const { chatId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, message: "Not Authorized" });
+    }
+
+    // ── Find and validate chat ownership ─────────────────────────────────
+    const chat = await findChatOrFail(chatId, userId, res);
+    if (!chat) return;
+
+    if (!chat.messages || chat.messages.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No chat history found to regenerate",
+      });
+    }
+
+    // Find the last assistant message and the user message before it
+    const messages = chat.messages;
+    let lastAssistantIdx = -1;
+    let lastUserMessage = null;
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant" && lastAssistantIdx === -1) {
+        lastAssistantIdx = i;
+      }
+      if (messages[i].role === "user" && lastAssistantIdx !== -1) {
+        lastUserMessage = messages[i].content;
+        break;
+      }
+    }
+
+    if (lastAssistantIdx === -1 || !lastUserMessage) {
+      return res.status(400).json({
+        success: false,
+        message: "No assistant message to regenerate",
+      });
+    }
+
+    // Remove the last assistant message from the array
+    messages.splice(lastAssistantIdx, 1);
+    await chat.save();
+
+    const activeSources = chat.sourceIds;
+
+    // ── Start Execution Trace Session ───────────────────────────────────
+    trace = createTraceSession(userId, chatId, `[Regenerate] ${lastUserMessage}`);
+
+    // ── Set SSE headers ──────────────────────────────────────────────────
+    setSSEHeaders(res);
+
+    // ── Register abort on client disconnect ──────────────────────────────
+    streamKey = `${userId}:${chatId}`;
+    activeStreams.set(streamKey, abortController);
+
+    req.on("close", () => {
+      abortController.abort();
+      activeStreams.delete(streamKey);
+    });
+
+    const previousHistory = chat.messages || [];
+
+    // ── Build the full prompt using the original user message ─────────────
+    const { prompt, citations, retrievalResult } = await buildPrompt(
+      lastUserMessage,
+      userId,
+      activeSources,
+      previousHistory,
+      chat.rollingSummary,
+      trace
+    );
+
+    // ── Send retrieval metadata (including traceId) ──────────────────────
+    res.write(
+      `data: ${JSON.stringify({
+        type: "metadata",
+        traceId: trace.traceId,
+        retrievalMetadata: retrievalResult.metadata,
+        citations,
+      })}\n\n`
+    );
+
+    // ── Stream the regenerated response ──────────────────────────────────
+    const tGenStart = Date.now();
+    fullText = await streamAgentResponse(res, prompt, abortController);
+    trace.setStepDuration("generationMs", Date.now() - tGenStart);
+
+    const refinedRes = fullText.trim();
+
+    // ── Persist the new assistant message ─────────────────────────────────
+    chat.messages.push({ role: "assistant", content: refinedRes, citations });
+    await chat.save();
+
+    // ── Asynchronously complete execution trace in background ────────────
+    trace.complete({ response: refinedRes });
+
+    // ── Fire-and-forget background workers ───────────────────────────────
+    enqueueMemoryExtractionIfNeeded(chat, userId).catch((err) =>
+      console.error("Failed to enqueue memory extraction:", err)
+    );
+    enqueueChatSummaryIfNeeded(chat, userId).catch((err) =>
+      console.error("Failed to enqueue chat summary:", err)
+    );
+
+    // ── Send completion event ────────────────────────────────────────────
+    res.write(
+      `data: ${JSON.stringify({
+        type: "done",
+        traceId: trace.traceId,
+        fullResponse: refinedRes,
+        citations,
+        messages: chat.messages,
+      })}\n\n`
+    );
+    res.end();
+  } catch (error) {
+    if (trace) {
+      trace.complete({ response: fullText || "", error });
+    }
+
+    if (abortController.signal.aborted) {
+      try {
+        res.write(
+          `data: ${JSON.stringify({ type: "stopped", message: "Regeneration stopped by user" })}\n\n`
+        );
+        res.end();
+      } catch {
+        // Response may already be closed
+      }
+      return;
+    }
+
+    console.error("❌ Error in regenerateMessage:", error);
+
+    if (res.headersSent) {
+      try {
+        res.write(
+          `data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`
+        );
+        res.end();
+      } catch {
+        // Response may already be closed
+      }
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: "Internal error while regenerating",
+        error: error.message,
+      });
+    }
+  } finally {
+    if (streamKey) {
+      activeStreams.delete(streamKey);
+    }
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /:chatId/save-partial — Save a partial response after stop
+// Allows the frontend to persist what was streamed before the user stopped.
+// ─────────────────────────────────────────────────────────────────────────────
+export const savePartialResponse = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { chatId } = req.params;
+    const { userMessage, partialResponse, citations } = req.body;
+
+    if (!userId || !chatId) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing userId or chatId",
+      });
+    }
+
+    if (!userMessage || !partialResponse) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing userMessage or partialResponse",
+      });
+    }
+
+    const chat = await findChatOrFail(chatId, userId, res);
+    if (!chat) return;
+
+    // Only push if the user message isn't already the last user message
+    // (it may have been saved before stop in some race conditions)
+    const lastUserMsg = [...chat.messages].reverse().find((m) => m.role === "user");
+    if (!lastUserMsg || lastUserMsg.content !== userMessage) {
+      chat.messages.push({ role: "user", content: userMessage });
+    }
+
+    const cleanCitations = Array.isArray(citations)
+      ? citations.map((c) => ({
+          sourceId:
+            c.sourceId && mongoose.Types.ObjectId.isValid(c.sourceId)
+              ? c.sourceId
+              : null,
+          originalFileName: c.originalFileName || "Document",
+          pageNumber: c.pageNumber || 1,
+          chunkId:
+            c.chunkId && mongoose.Types.ObjectId.isValid(c.chunkId)
+              ? c.chunkId
+              : null,
+          snippet: (c.snippet || "").slice(0, 200),
+        }))
+      : [];
+
+    chat.messages.push({
+      role: "assistant",
+      content: partialResponse,
+      citations: cleanCitations,
+    });
+
+    await chat.save();
+
+    // ── Fire-and-forget background workers ───────────────────────────────
+    enqueueMemoryExtractionIfNeeded(chat, userId).catch((err) =>
+      console.error("Failed to enqueue memory extraction:", err)
+    );
+    enqueueChatSummaryIfNeeded(chat, userId).catch((err) =>
+      console.error("Failed to enqueue chat summary:", err)
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Partial response saved",
+      messages: chat.messages,
+    });
+  } catch (error) {
+    console.error("❌ Error in savePartialResponse:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to save partial response",
+      error: error.message,
+    });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /:chatId — Fetch a single chat with full message history
+// ─────────────────────────────────────────────────────────────────────────────
+export const getChat = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { chatId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, message: "Not Authorized" });
+    }
+
+    const chat = await findChatOrFail(chatId, userId, res);
+    if (!chat) return;
+
+    await chat.populate("sourceIds", "title originalFileName type status");
+
+    const rawMessages = chat.messages || [];
+
+    // Ensure each message strictly includes its own citations
+    const messages = rawMessages.map((m) => {
+      const msgObj = m.toObject ? m.toObject() : { ...m };
+      return {
+        ...msgObj,
+        citations: Array.isArray(msgObj.citations) ? msgObj.citations : [],
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      chat,
+      messages,
+      message: "Chat fetched",
+    });
+  } catch (error) {
+    console.error("❌ Error in getChat:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal error while fetching chat",
+      error: error.message,
     });
   }
 };
