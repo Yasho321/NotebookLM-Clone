@@ -3,8 +3,8 @@ import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { DocxLoader } from "@langchain/community/document_loaders/fs/docx";
 import { CSVLoader } from "@langchain/community/document_loaders/fs/csv";
 import { TextLoader } from "langchain/document_loaders/fs/text";
-import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { s3 } from "../../shared/libs/s3.js";
+import { Document } from "@langchain/core/documents";
 
 async function streamToBuffer(stream) {
   const chunks = [];
@@ -31,7 +31,19 @@ async function downloadFromS3(s3Key) {
   return streamToBuffer(data.Body);
 }
 
-export async function processFile(s3Key, mimeType) {
+function resolveSourceType(mimeType) {
+  if (mimeType === "application/pdf") return "pdf";
+  if (
+    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    mimeType === "application/msword"
+  ) {
+    return "docx";
+  }
+  if (mimeType === "text/csv") return "csv";
+  return "text";
+}
+
+export async function processFile(s3Key, mimeType, originalFileName = null) {
   console.log("🚀 Processing file from S3:", s3Key, "Type:", mimeType);
 
   const buffer = await downloadFromS3(s3Key);
@@ -65,13 +77,20 @@ export async function processFile(s3Key, mimeType) {
   }
 
   const documents = await loader.load();
+  const resolvedType = resolveSourceType(mimeType);
+  const fileName = originalFileName || s3Key.split("-")[1];
 
-  const splitter = new RecursiveCharacterTextSplitter({
-    chunkSize: 1000,
-    chunkOverlap: 200,
+  return documents.map((doc, idx) => {
+    const pageNum = doc.metadata?.loc?.pageNumber || idx + 1;
+    return new Document({
+      pageContent: doc.pageContent,
+      metadata: {
+        sourceType: resolvedType,
+        originalFileName: fileName,
+        pageNumber: pageNum,
+        url: null,
+        headingHierarchy: [],
+      },
+    });
   });
-
-  const chunks = await splitter.splitDocuments(documents);
-
-  return chunks;
 }

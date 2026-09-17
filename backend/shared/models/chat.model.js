@@ -11,6 +11,16 @@ const messageSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    citations: [
+      {
+        sourceId: { type: Schema.Types.ObjectId, ref: "Source" },
+        originalFileName: String,
+        pageNumber: Number,
+        chunkId: { type: Schema.Types.ObjectId, ref: "Chunk" },
+        snippet: String,
+      }
+    ]
+
   },
   { _id: false }, // prevent _id for each message
 );
@@ -22,10 +32,21 @@ const chatSchema = new Schema(
       ref: "User",
       required: true,
     },
-    sourceId: {
-      type: Schema.Types.ObjectId,
-      ref: "Source",
+    sourceIds: {
+      type: [{ type: Schema.Types.ObjectId, ref: "Source" }],
       required: true,
+      validate: {
+        validator: (arr) => Array.isArray(arr) && arr.length > 0,
+        message: "At least one source is required",
+      },
+    },
+    title: {
+      type: String,
+      default: null, // Optional chat title, auto-generated or user-set
+    },
+    rollingSummary: {
+      type: String,
+      default: null, // Holds the compressed summary of older messages
     },
     messages: {
       type: [messageSchema],

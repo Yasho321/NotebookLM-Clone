@@ -2,10 +2,12 @@ import { create } from 'zustand';
 import { axiosInstance } from '../lib/axios';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { useChatStore } from './chatStore';
 
 export const useSourceStore = create((set, get) => ({
   sources: [],
   selectedSource: null,
+  selectedSourceIds: [],
   isLoading: false,
   isUploading: false,
 
@@ -17,8 +19,29 @@ export const useSourceStore = create((set, get) => ({
       const sources = rawSources.map(s => ({ ...s, _id: s._id || s.id })).reverse();
       set((state) => {
         const currentSelectedId = state.selectedSource?._id || state.selectedSource?.id;
+        const validIds = new Set(sources.map(s => s._id));
+
+        // If a chat session is currently active, sources are strictly locked to that chat
+        const activeChat = useChatStore.getState?.()?.activeChat;
+        const activeChatId = useChatStore.getState?.()?.activeChatId;
+
+        let newSelectedIds;
+        if (activeChatId && activeChat?.sourceIds) {
+          newSelectedIds = activeChat.sourceIds
+            .map((s) => (typeof s === 'string' ? s : s._id || s.id))
+            .filter((id) => validIds.has(id));
+        } else {
+          // In new dialogue mode, preserve user's valid selection or default to completed sources
+          newSelectedIds = state.selectedSourceIds.filter(id => validIds.has(id));
+          if (newSelectedIds.length === 0 && sources.length > 0) {
+            const completed = sources.filter(s => s.status === 'completed');
+            newSelectedIds = (completed.length > 0 ? completed : sources).map(s => s._id);
+          }
+        }
+
         return {
           sources,
+          selectedSourceIds: newSelectedIds,
           selectedSource:
             currentSelectedId && sources.find((s) => s._id === currentSelectedId)
               ? sources.find((s) => s._id === currentSelectedId)
@@ -272,8 +295,37 @@ export const useSourceStore = create((set, get) => ({
     set({ selectedSource: normalized });
   },
 
+  toggleSourceSelection: (sourceId) => {
+    const activeChatId = useChatStore.getState?.()?.activeChatId;
+    if (activeChatId) {
+      toast.info("Sources cannot be changed in an existing dialogue. Start a new dialogue to select different sources.");
+      return;
+    }
+    set((state) => {
+      const exists = state.selectedSourceIds.includes(sourceId);
+      const newSelected = exists
+        ? state.selectedSourceIds.filter((id) => id !== sourceId)
+        : [...state.selectedSourceIds, sourceId];
+      return { selectedSourceIds: newSelected };
+    });
+  },
+
+  selectAllSources: () => {
+    const activeChatId = useChatStore.getState?.()?.activeChatId;
+    if (activeChatId) return;
+    set((state) => ({
+      selectedSourceIds: state.sources.map((s) => s._id),
+    }));
+  },
+
+  clearSourceSelection: () => {
+    const activeChatId = useChatStore.getState?.()?.activeChatId;
+    if (activeChatId) return;
+    set({ selectedSourceIds: [] });
+  },
+
   clearSources: () => {
-    set({ sources: [], selectedSource: null });
+    set({ sources: [], selectedSource: null, selectedSourceIds: [] });
   }
 
 }));

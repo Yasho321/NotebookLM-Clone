@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Plus, FileText, Link, Upload, Loader2, FileType, FileSpreadsheet, AlertCircle } from "lucide-react";
+import { Plus, FileText, Link, Upload, Loader2, FileType, FileSpreadsheet, AlertCircle, CheckSquare, Square, Check, Lock } from "lucide-react";
 import { useSourceStore } from '../stores/sourceStore';
+import { useChatStore } from '../stores/chatStore';
 import { toast } from 'sonner';
 
 const getSourceIcon = (type) => {
@@ -60,7 +61,22 @@ const StatusBadge = ({ status }) => {
 };
 
 export default function SourcePanel() {
-  const { sources, selectedSource, isUploading, addTextSource, addFileSource, addUrlSource, selectSource } = useSourceStore();
+  const {
+    sources,
+    selectedSource,
+    selectedSourceIds,
+    isUploading,
+    addTextSource,
+    addFileSource,
+    addUrlSource,
+    selectSource,
+    toggleSourceSelection,
+    selectAllSources,
+    clearSourceSelection,
+  } = useSourceStore();
+  const activeChatId = useChatStore((s) => s.activeChatId);
+  const startNewChat = useChatStore((s) => s.startNewChat);
+  const isChatActive = Boolean(activeChatId);
   const [textInput, setTextInput] = useState('');
   const [urlInput, setUrlInput] = useState('');
   const [file, setFile] = useState(null);
@@ -209,38 +225,131 @@ export default function SourcePanel() {
 
       {/* Sources List */}
       <div className="flex-1 overflow-y-auto p-5">
-        <span className="text-label text-muted-foreground block mb-4" style={{ fontSize: '11px' }}>
-          LIBRARY
-        </span>
-        <div className="space-y-1">
-          {sources.map((source) => (
-            <div
-              key={source._id || source.id}
-              className={`p-3 cursor-pointer transition-all border-l-2 ${
-                selectedSource?._id === source._id
-                  ? 'border-l-foreground bg-muted/50'
-                  : 'border-l-transparent hover:bg-muted/30'
-              }`}
-              onClick={() => selectSource(source)}
-            >
-              <div className="flex items-start gap-2.5">
-                <div className="flex-shrink-0 mt-0.5">
-                  {getSourceIcon(source.type)}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-label text-muted-foreground font-semibold" style={{ fontSize: '11px', letterSpacing: '0.08em' }}>
+              LIBRARY
+            </span>
+            {sources.length > 0 && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border/60">
+                {selectedSourceIds.length}/{sources.length} active
+              </span>
+            )}
+          </div>
+          {sources.length > 0 && (
+            isChatActive ? (
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="flex items-center gap-1 text-[11px] text-muted-foreground bg-muted/60 px-2 py-0.5 rounded border border-border/60 cursor-default"
+                  title="Source selection is locked for this active dialogue. Start a new dialogue to change sources."
+                >
+                  <Lock className="w-3 h-3 text-muted-foreground" />
+                  <span>Locked</span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-meta font-semibold text-foreground truncate leading-snug">
-                    {source.title || source.originalFileName || `${source.type} source`}
-                  </p>
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-muted-foreground" style={{ fontSize: '11px' }}>
-                      {getTypeLabel(source.type)}
-                    </span>
-                    <StatusBadge status={source.status} />
+                <button
+                  type="button"
+                  onClick={startNewChat}
+                  className="text-[11px] font-medium text-foreground hover:underline transition-colors cursor-pointer"
+                  title="Start a new dialogue to choose different sources"
+                >
+                  + New
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-[11px]">
+                <button
+                  type="button"
+                  onClick={selectAllSources}
+                  className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  title="Include all sources in queries"
+                >
+                  All
+                </button>
+                <span className="text-border">·</span>
+                <button
+                  type="button"
+                  onClick={clearSourceSelection}
+                  className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  title="Clear all selected sources"
+                >
+                  None
+                </button>
+              </div>
+            )
+          )}
+        </div>
+
+        <div className="space-y-1">
+          {sources.map((source) => {
+            const isChecked = selectedSourceIds.includes(source._id || source.id);
+            const isViewing = selectedSource?._id === (source._id || source.id);
+
+            return (
+              <div
+                key={source._id || source.id}
+                className={`p-2.5 rounded-md cursor-pointer transition-all border ${
+                  isViewing
+                    ? 'bg-muted/60 border-foreground/30 shadow-xs'
+                    : isChecked
+                    ? 'border-border/80 hover:bg-muted/30'
+                    : 'border-transparent opacity-75 hover:opacity-100 hover:bg-muted/20'
+                }`}
+                onClick={() => selectSource(source)}
+              >
+                <div className="flex items-start gap-2.5">
+                  {/* Selection Checkbox for Querying (Locked when chat is active) */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isChatActive) {
+                        toast.info("Sources are locked to the current dialogue. Click '+ New' to start a new dialogue with different sources.");
+                      } else {
+                        toggleSourceSelection(source._id || source.id);
+                      }
+                    }}
+                    className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
+                      isChatActive
+                        ? isChecked
+                          ? 'bg-muted border-foreground/40 text-foreground cursor-not-allowed opacity-90'
+                          : 'border-border/30 bg-muted/10 text-transparent cursor-not-allowed opacity-25'
+                        : isChecked
+                        ? 'bg-primary border-primary text-primary-foreground cursor-pointer'
+                        : 'border-border hover:border-foreground/50 bg-background cursor-pointer'
+                    }`}
+                    title={
+                      isChatActive
+                        ? isChecked
+                          ? "Source is part of this active dialogue (locked). Start a new dialogue to change sources."
+                          : "Source is not part of this dialogue (locked). Start a new dialogue to change sources."
+                        : isChecked
+                        ? "Source included in next dialogue (click to exclude)"
+                        : "Source excluded from next dialogue (click to include)"
+                    }
+                    aria-label={`Toggle source ${source.title || source.originalFileName}`}
+                  >
+                    {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                  </button>
+
+                  <div className="flex-shrink-0 mt-0.5">
+                    {getSourceIcon(source.type)}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className="text-meta font-semibold text-foreground truncate leading-snug">
+                      {source.title || source.originalFileName || `${source.type} source`}
+                    </p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-muted-foreground" style={{ fontSize: '11px' }}>
+                        {getTypeLabel(source.type)}
+                      </span>
+                      <StatusBadge status={source.status} />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {sources.length === 0 && (
             <div className="text-center py-12">
               <FileText className="w-8 h-8 mx-auto text-muted-foreground/40 mb-3" />

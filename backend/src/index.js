@@ -6,6 +6,7 @@ import db from "../shared/libs/db.js";
 import authRoutes from "./routes/user.routes.js";
 import sourceRouter from "./routes/source.routes.js";
 import chatRouter from "./routes/chat.routes.js";
+import observabilityRouter from "./routes/observability.routes.js";
 
 const app = express();
 
@@ -33,6 +34,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/source", sourceRouter);
 app.use("/api/v1/chat", chatRouter);
+app.use("/api/v1/observability", observabilityRouter);
 
 db();
 

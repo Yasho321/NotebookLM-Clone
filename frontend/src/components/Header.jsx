@@ -1,11 +1,19 @@
+import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
-import { LogOut, User, Sun, Moon, BookOpen } from "lucide-react";
+import { LogOut, User, Sun, Moon, BookOpen, Activity } from "lucide-react";
 import { useAuthStore } from '../stores/authStore';
 import { useThemeStore } from '../stores/themeStore';
 
+const ADMIN_EMAIL = 'yashovardhans321@chithilm.com';
+
 export default function Header() {
+  const navigate = useNavigate();
   const { authUser, logout } = useAuthStore();
   const { theme, toggleTheme } = useThemeStore();
+
+  const isAdmin =
+    authUser?.role === 'admin' ||
+    authUser?.email?.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
 
   return (
     <header className="h-12 bg-background border-b border-border flex items-center justify-between px-6 flex-shrink-0">
@@ -27,6 +35,20 @@ export default function Header() {
       </div>
 
       <div className="flex items-center gap-3">
+        {/* Admin Evals Cockpit Link */}
+        {isAdmin && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/dashboard')}
+            className="h-8 px-2.5 text-xs text-foreground border-border hover:bg-muted/80 rounded-lg cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            title="Open Telemetry & Evaluation Cockpit"
+          >
+            <Activity className="w-3.5 h-3.5 text-primary" />
+            <span className="hidden md:inline font-medium">Evals & Traces</span>
+          </Button>
+        )}
+
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}

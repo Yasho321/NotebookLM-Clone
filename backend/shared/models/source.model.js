@@ -53,6 +53,18 @@ const sourceSchema = new Schema(
       type: String,
       default: null,
     },
+    totalParentChunks: {
+      type: Number,
+      default: 0,
+    },
+    totalChildChunks: {
+      type: Number,
+      default: 0,
+    },
+    totalPages: {
+      type: Number,
+      default: 1,
+    },
   },
   {
     timestamps: true,
