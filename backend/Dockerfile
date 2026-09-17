@@ -3,7 +3,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install --omit=dev --legacy-peer-deps
 
 
 FROM node:22-alpine AS runner
