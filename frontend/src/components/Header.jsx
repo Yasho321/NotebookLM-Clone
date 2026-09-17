@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
-import { LogOut, User, Sun, Moon, BookOpen, Activity } from "lucide-react";
+import { LogOut, User, Sun, Moon, Activity } from "lucide-react";
 import { useAuthStore } from '../stores/authStore';
 import { useThemeStore } from '../stores/themeStore';
 
@@ -18,12 +18,18 @@ export default function Header() {
   return (
     <header className="h-12 bg-background border-b border-border flex items-center justify-between px-6 flex-shrink-0">
       {/* Brand Identity */}
-      <div className="flex items-center gap-3">
-        <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow-xs flex-shrink-0">
-          <BookOpen className="w-3.5 h-3.5" />
-        </div>
+      <div 
+        onClick={() => navigate('/workspace')} 
+        className="flex items-center gap-2.5 cursor-pointer group select-none"
+        title="Chithhi LM Workspace"
+      >
+        <img
+          src="/logo.png"
+          alt="Chithhi LM Logo"
+          className="w-7 h-7 object-contain drop-shadow-xs dark:drop-shadow-[0_2px_8px_rgba(255,255,255,0.15)] group-hover:scale-105 transition-transform duration-200 flex-shrink-0"
+        />
         <div className="flex items-center gap-1.5">
-          <span className="text-foreground tracking-tight font-semibold text-sm">Chithhi</span>
+          <span className="text-foreground tracking-tight font-semibold text-sm group-hover:text-foreground/90 transition-colors">Chithhi</span>
           <span className="text-[10px] font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/60">
             LM
           </span>

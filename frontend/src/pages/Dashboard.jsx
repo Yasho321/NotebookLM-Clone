@@ -98,14 +98,28 @@ export default function Dashboard() {
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
+          <div 
+            onClick={() => navigate('/workspace')} 
+            className="flex items-center gap-2 cursor-pointer group select-none"
+            title="Return to Chithhi LM Workspace"
+          >
+            <img
+              src="/logo.png"
+              alt="Chithhi LM Logo"
+              className="w-6 h-6 object-contain drop-shadow-xs dark:drop-shadow-[0_2px_6px_rgba(255,255,255,0.15)] group-hover:scale-105 transition-transform duration-200"
+            />
+            <span className="text-xs font-semibold text-foreground tracking-tight group-hover:text-foreground/80 transition-colors">
+              Chithhi LM
+            </span>
+          </div>
           <div className="h-4 w-px bg-border mx-0.5" />
           <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-primary" />
-            <h1 className="text-sm font-semibold text-foreground tracking-tight">
+            <Activity className="w-3.5 h-3.5 text-primary" />
+            <h1 className="text-xs font-medium text-muted-foreground tracking-tight hidden sm:inline">
               Observability & Evaluation Cockpit
             </h1>
             <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border/60">
-              Admin Telemetry
+              Telemetry
             </span>
           </div>
         </div>
