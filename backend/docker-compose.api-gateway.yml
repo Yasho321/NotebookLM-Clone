@@ -35,6 +35,7 @@ services:
       - traefik
       - project-a-network
       - traefik-dozzle
+      - peshkar-network
 
 networks:
   traefik:
@@ -43,3 +44,5 @@ networks:
     name: project-a-network
   traefik-dozzle:
     name: traefik-dozzle
+  peshkar-network:
+    name: peshkar-network
