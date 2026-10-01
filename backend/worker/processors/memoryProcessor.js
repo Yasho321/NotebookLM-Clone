@@ -6,6 +6,8 @@ import { OpenAIEmbeddings } from "@langchain/openai";
 import { QdrantVectorStore } from "@langchain/qdrant";
 import User from "../../shared/models/user.model.js";
 import { executeCypher } from "../../shared/libs/neo4j.js";
+import { typeSafeClient } from "../../shared/libs/typesafe.js";
+import { noul } from "@typesafe-ai/sdk";
 
 // 1. Zod schema for batch memory extraction (both factual & episodic)
 export const MemoryBatchSchema = z.object({
@@ -123,6 +125,33 @@ export async function processMemoryExtraction(job) {
   const dialogue = messages
     .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
     .join("\n\n");
+
+  // Fast gatekeeper: Check if batch contains any personal user traits or memories
+  if (typeSafeClient) {
+    try {
+      const gatekeeperRes = await typeSafeClient.systemOne({
+        state: { dialogue_batch: dialogue },
+        questions: {
+          has_user_personal_memory: noul(
+            "Does this conversation batch contain durable personal information, personal life events, roles, or traits about the human user (as opposed to just questions and answers about uploaded documents or general topics)?"
+          ),
+        },
+      });
+
+      const memProb = gatekeeperRes.answers?.has_user_personal_memory?.noul ?? 0.5;
+      if (memProb < 0.2) {
+        console.log(
+          `ℹ️ [memoryProcessor] TypeSafe fast-path: No personal user memories detected (prob: ${memProb.toFixed(2)}) for user ${userId}. Skipping heavy Cypher/Agent extraction.`
+        );
+        return { success: true, factualCount: 0, episodicCount: 0 };
+      }
+    } catch (err) {
+      console.warn(
+        "⚠️ [memoryProcessor] TypeSafe gatekeeper check failed, falling back to full agent extraction:",
+        err.message
+      );
+    }
+  }
 
   const prompt = existingGraphContext
     ? `EXISTING USER GRAPH RELATIONSHIPS:\n${existingGraphContext}\n\nCONVERSATION BATCH (40 MESSAGES TO ANALYZE FOR USER MEMORIES):\n${dialogue}`

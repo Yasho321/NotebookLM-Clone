@@ -8,7 +8,7 @@ import { rerank } from "./reRanker.js";
  * Default threshold parameters for Corrective RAG (CRAG)
  */
 export const CRAG_CONFIG = {
-  MAX_RETRIES: 2,       // Maximum corrective retrieval rounds
+  MAX_RETRIES: 1,       // Maximum corrective retrieval rounds (capped to 1 to avoid compounding latency)
   GOOD_ENOUGH: 5,       // Score (0-10) threshold to stop corrective search
   REFUSE_BELOW: 3,      // Score threshold below which model should refuse / express uncertainty
   DEFAULT_TOP_N: 8,     // Number of top chunks to preserve after reranking

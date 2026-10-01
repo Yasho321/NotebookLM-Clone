@@ -1,6 +1,8 @@
 import "../../shared/libs/env.js";
 import { z } from "zod";
 import { Agent, run } from "@openai/agents";
+import { typeSafeClient } from "../../shared/libs/typesafe.js";
+import { choice } from "@typesafe-ai/sdk";
 
 
 export const AdaptiveStrategySchema = z.object({
@@ -106,8 +108,49 @@ export async function routeAdaptiveStrategy(question, conversationHistory = []) 
     ? `Conversation History:\n${historyContext}\n\nCurrent Question: ${question}`
     : `Current Question: ${question}`;
 
+  // 1. Try TypeSafe System One (Jev) for sub-100ms deterministic classification
+  if (typeSafeClient) {
+    try {
+      const response = await typeSafeClient.systemOne({
+        state: {
+          conversation_history: historyContext || "None",
+          user_question: question,
+        },
+        questions: {
+          strategy: choice(
+            "Classify the user's research query into the single most appropriate retrieval strategy based on intent and scope.",
+            {
+              DIRECT_ANSWER:
+                "Casual greetings, pleasantries, gratitude, identity queries, or general chit-chat not referencing documents",
+              BROAD_SUMMARY:
+                "Requests for comprehensive document summaries, high-level overviews, main themes, or executive outlines",
+              COMPLEX_DECOMPOSE:
+                "Compound multi-part questions, comparative queries, or multi-hop synthesis across distinct sections",
+              FACTUAL_SPECIFIC:
+                "Specific factual lookups, definitions, metrics, quotes, code snippets, or localized document questions",
+            }
+          ),
+        },
+      });
+
+      const selected = response.answers.strategy?.choice;
+      const confidence = response.answers.strategy?.confidence;
+      if (selected && STRATEGY_CONFIGS[selected]) {
+        const config = STRATEGY_CONFIGS[selected];
+        return {
+          strategy: selected,
+          reasoning: `TypeSafe Jev System One (confidence: ${confidence})`,
+          shouldRetrieve: selected !== "DIRECT_ANSWER",
+          ...config,
+        };
+      }
+    } catch (err) {
+      console.warn("⚠️ TypeSafe strategy routing failed, falling back to agent SDK:", err.message);
+    }
+  }
+
+  // 2. Fallback to Agent SDK runner
   try {
-    // Run the Agent SDK runner
     const result = await run(adaptiveRouterAgent, prompt);
     const classification = result.finalOutput;
     const config =

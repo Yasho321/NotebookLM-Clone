@@ -95,3 +95,90 @@ export async function vectorSearch(query, sourceIds, userId, { k = 10, filterLev
     return [];
   }
 }
+
+/**
+ * Performs batch semantic vector search in Qdrant with a SINGLE OpenAI embedding API call.
+ * Avoids multiple sequential/concurrent HTTPS round-trips from India to OpenAI US servers.
+ *
+ * @param {string[]} queries - Array of search query strings
+ * @param {string[]|string} sourceIds - Selected source IDs
+ * @param {string} userId - Current user ID
+ * @param {object} options - { k: number, filterLevel: string }
+ * @returns {Promise<Array<Array<object>>>} Array of result sets, one per input query
+ */
+export async function batchVectorSearch(
+  queries = [],
+  sourceIds,
+  userId,
+  { k = 10, filterLevel = "child" } = {}
+) {
+  const validQueries = queries.filter((q) => q && typeof q === "string" && q.trim());
+  if (validQueries.length === 0) return [];
+
+  const vectorStore = await getVectorStore();
+  const normalizedSourceIds = (Array.isArray(sourceIds) ? sourceIds : [sourceIds])
+    .filter(Boolean)
+    .map((id) => id.toString());
+
+  if (normalizedSourceIds.length === 0) {
+    return validQueries.map(() => []);
+  }
+
+  const filterMust = [
+    { key: "metadata.userId", match: { value: userId.toString() } },
+  ];
+
+  if (filterLevel) {
+    filterMust.push({ key: "metadata.level", match: { value: filterLevel } });
+  }
+
+  if (normalizedSourceIds.length === 1) {
+    filterMust.push({
+      key: "metadata.sourceId",
+      match: { value: normalizedSourceIds[0] },
+    });
+  } else {
+    filterMust.push({
+      key: "metadata.sourceId",
+      match: { any: normalizedSourceIds },
+    });
+  }
+
+  try {
+    // 1 single HTTP request to OpenAI embeds all queries simultaneously
+    const vectors = await embeddings.embedDocuments(validQueries);
+
+    // Concurrently search Qdrant using the precomputed vectors
+    const searchPromises = vectors.map(async (vector) => {
+      const resultsWithScore = await vectorStore.similaritySearchVectorWithScore(
+        vector,
+        k,
+        { must: filterMust }
+      );
+      return resultsWithScore.map(([doc, score]) => {
+        const metadata = doc.metadata || {};
+        return {
+          chunkId: metadata.chunkId || doc.id,
+          parentChunkId: metadata.parentChunkId || null,
+          sourceId: metadata.sourceId || null,
+          score: typeof score === "number" ? score : 0,
+          pageContent: doc.pageContent,
+          metadata: {
+            sourceType: metadata.sourceType || "text",
+            originalFileName: metadata.originalFileName || "Untitled",
+            pageNumber: metadata.pageNumber || 1,
+            url: metadata.url || null,
+          },
+        };
+      });
+    });
+
+    return await Promise.all(searchPromises);
+  } catch (error) {
+    console.error("❌ Batch Qdrant vector search failed, falling back to individual:", error);
+    return Promise.all(
+      validQueries.map((q) => vectorSearch(q, sourceIds, userId, { k, filterLevel }))
+    );
+  }
+}
+

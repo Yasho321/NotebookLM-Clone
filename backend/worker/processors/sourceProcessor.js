@@ -27,7 +27,7 @@ export const SourceSummarySchema = z.object({
 // Agent SDK Document Summarizer Agent
 const sourceSummarizerAgent = new Agent({
   name: "source-summarizer",
-  model: "gpt-4.1-mini",
+  model: "gpt-4.1-nano",
   outputType: SourceSummarySchema,
   instructions: `You are an expert document analysis and executive summarization engine for an AI research notebook.
 Analyze the provided document macro-sections (which span the introduction, core sections, and conclusions) and generate:
@@ -107,16 +107,20 @@ export async function processSource(job) {
     for (const parent of savedParents) {
       const childTexts = await childSplitter.splitText(parent.pageContent);
       for (const text of childTexts) {
+        const trimmed = (text || "").trim();
+        // Skip empty or trivial fragments (< 25 chars) that waste vector storage and pollute search
+        if (trimmed.length < 25) continue;
+
         childChunkInserts.push({
           sourceId: source._id,
           userId: source.userId,
           level: "child",
           parentChunkId: parent._id,
-          pageContent: text,
+          pageContent: trimmed,
           chunkIndex: childGlobalIdx++,
           metadata: {
             ...parent.toObject().metadata,
-            charCount: text.length,
+            charCount: trimmed.length,
           },
           qdrantPointId: crypto.randomUUID(),
         });

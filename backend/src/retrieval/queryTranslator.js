@@ -18,40 +18,35 @@ export const QueryTranslationSchema = z.object({
     .array(z.string())
     .max(3)
     .describe(
-      "Up to 3 independent, atomic sub-questions if the query is compound or multi-part. If the question is simple, return an empty array."
+      "Up to 2 independent, atomic sub-questions if the query is compound or multi-part. If the question is simple, return an empty array."
     ),
   hyde: z
     .string()
     .describe(
-      "A hypothetical passage (100-150 words) written as if it were a direct, factual answer from a document. Used exclusively as an embedding search key."
+      "A concise 1-2 sentence hypothetical answer excerpt (max 30 words) with key technical terms. Used as embedding search key."
     ),
 });
 
-// 2. Define the Query Translator Agent
+// 2. Define the Query Translator Agent (Fast Nano model)
 const queryTranslatorAgent = new Agent({
   name: "query-translator",
-  model: "gpt-4.1-mini",
+  model: "gpt-4.1-nano",
   outputType: QueryTranslationSchema,
-  instructions: `You are an expert retrieval query analysis and translation engine for an advanced RAG system.
-Given the user's question and recent conversation history, generate 4 representations:
+  instructions: `You are an ultra-fast retrieval query analysis engine for an advanced RAG system.
+Given the user's question and recent conversation history, generate:
 
 1. rewrite:
-   - Make the question completely standalone.
-   - Resolve all relative terms and pronouns (e.g. "it", "they", "that table", "the second option").
-   - If the question is already standalone, keep it unchanged.
+   - Make the question standalone, resolving pronouns ('it', 'that', 'this') from history.
+   - If already standalone, keep it unchanged.
 
 2. stepBack:
-   - Formulate a higher-level, more general conceptual question.
-   - Example: For "Why did the database deadlock on row 42?", stepBack would be "How does database concurrency control and row locking work?".
+   - 1 higher-level conceptual query capturing core principles.
 
 3. subQuestions:
-   - If the user query contains multiple requests (e.g. "What is X, how does it differ from Y, and what are the pricing tiers?"), decompose it into up to 3 focused, atomic questions.
-   - If the question is single-focus, return [].
+   - If compound, up to 2 atomic sub-questions; else [].
 
-4. hyde (Hypothetical Document Embeddings):
-   - Hallucinate a realistic, authoritative excerpt (100-150 words) that would directly answer the question.
-   - Do NOT say "I think" or "This document discusses". Write it in the tone of a textbook or technical spec.
-   - (Note: This is strictly an embedding search vector, never shown to the user).`,
+4. hyde:
+   - Concise 1-2 sentence (max 30 words) factual excerpt with domain terminology. Never write long essays.`,
 });
 
 /**

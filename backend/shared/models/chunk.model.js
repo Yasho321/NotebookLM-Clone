@@ -57,6 +57,8 @@ const chunkSchema = new Schema(
 // Indexes for fast retrieval
 chunkSchema.index({ sourceId: 1, level: 1 });
 chunkSchema.index({ userId: 1, sourceId: 1 });
+chunkSchema.index({ userId: 1, sourceId: 1, level: 1 }); // 100% index-covered for BM25 search
+chunkSchema.index({ userId: 1, level: 1, _id: 1 });       // Fast parent chunk expansion
 // Full-text index for native MongoDB keyword / BM25 search fallback
 chunkSchema.index({ pageContent: "text" });
 

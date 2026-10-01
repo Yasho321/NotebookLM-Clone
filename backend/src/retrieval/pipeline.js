@@ -121,13 +121,22 @@ export async function retrievalPipeline(
     ? [sourceIds]
     : [];
 
+  // Start total pipeline timing
+  const pipelineStartTime = Date.now();
+  const timings = {};
+
   // =========================================================================
-  // STEP 0: Adaptive Strategy Routing
+  // STEP 0, 1 & 2: Strategy Routing, Translation & Channel Routing (in PARALLEL)
+  // All 3 LLM calls execute concurrently. routeQuery (~400ms) runs in the
+  // background of translateQuery (~4,000ms), eliminating 400-600ms of serial latency.
   // =========================================================================
-  const strategyConfig = await routeAdaptiveStrategy(
-    normalizedQuestion,
-    conversationHistory
-  );
+  const t01 = Date.now();
+  const [strategyConfig, queryVariants, channelDecision] = await Promise.all([
+    routeAdaptiveStrategy(normalizedQuestion, conversationHistory),
+    translateQuery(normalizedQuestion, conversationHistory),
+    routeQuery(normalizedQuestion),
+  ]);
+  timings.translationMs = Date.now() - t01;
 
   // Fast Path: Direct Answer (e.g., greetings, general pleasantries, pure non-doc chat)
   if (!strategyConfig.shouldRetrieve || strategyConfig.strategy === "DIRECT_ANSWER") {
@@ -177,29 +186,11 @@ export async function retrievalPipeline(
     };
   }
 
-  // Start total pipeline timing
-  const pipelineStartTime = Date.now();
-  const timings = {};
-
-  // =========================================================================
-  // STEP 1: Query Translation (Multi-Representation)
-  // =========================================================================
-  const t1 = Date.now();
-  const queryVariants = await translateQuery(
-    normalizedQuestion,
-    conversationHistory
-  );
-
   // If strategy dictates not using HyDE or ablation skips it, omit hydeQuery
   if (!strategyConfig.useHyde || options.skipHyde) {
     queryVariants.hyde = null;
   }
-  timings.translationMs = Date.now() - t1;
 
-  // =========================================================================
-  // STEP 2: Channel Routing & Exact Term Extraction
-  // =========================================================================
-  const channelDecision = await routeQuery(queryVariants.rewrite || normalizedQuestion);
   const activeChannels = new Set(channelDecision.channels);
   if (options.skipBM25) {
     activeChannels.delete("BM25");
@@ -264,10 +255,29 @@ export async function retrievalPipeline(
   // STEP 7 & 8: Context Grading & Corrective RAG (CRAG) Loop
   // =========================================================================
   const t7 = Date.now();
-  const cragResult = options.skipCRAG
+
+  // Fast-path: If top reranked chunks already have high confidence, skip the heavy CRAG loop.
+  // This saves ~40-55 seconds on queries where retrieval is already spot-on.
+  const avgRerankScore = rerankedChunks.length > 0
+    ? rerankedChunks.reduce((sum, c) => sum + (c.rerankScore || 0), 0) / rerankedChunks.length
+    : 0;
+  const topRerankScore = rerankedChunks.length > 0
+    ? (rerankedChunks[0]?.rerankScore || 0)
+    : 0;
+  const skipCRAGFastPath = avgRerankScore >= 6.5 || topRerankScore >= 8;
+
+  const cragResult = (options.skipCRAG || skipCRAGFastPath)
     ? {
         docs: rerankedChunks,
-        grade: { score: 7, isSufficient: true, reasoning: "CRAG skipped via options" },
+        grade: {
+          score: Math.max(topRerankScore, 7),
+          isSufficient: true,
+          reasoning: skipCRAGFastPath
+            ? "CRAG fast-path: Initial rerank score is already high-confidence."
+            : "CRAG skipped via options",
+          missingInfo: "None",
+          suggestedKeywords: [],
+        },
         shouldRefuse: false,
         attempts: 0,
       }
@@ -282,7 +292,7 @@ export async function retrievalPipeline(
           topN: strategyConfig.topN || 8,
           goodEnoughScore: 5,
           refuseBelowScore: 3,
-          maxRetries: 2,
+          maxRetries: 1,
         }
       );
   timings.cragMs = Date.now() - t7;

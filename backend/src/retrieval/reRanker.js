@@ -1,6 +1,8 @@
 import "../../shared/libs/env.js";
 import { z } from "zod";
 import { Agent, run } from "@openai/agents";
+import { typeSafeClient } from "../../shared/libs/typesafe.js";
+import { score } from "@typesafe-ai/sdk";
 
 // 1. Zod schema for structured LLM relevance scoring
 export const RerankScoresSchema = z.object({
@@ -165,7 +167,7 @@ export async function rerank(
     .map((chunk, idx) => {
       const source = chunk.metadata?.originalFileName || "Document";
       const page = chunk.metadata?.pageNumber ? `, Page ${chunk.metadata.pageNumber}` : "";
-      return `[${idx}] Source: ${source}${page}\n${chunk.pageContent.slice(0, 400)}`;
+      return `[${idx}] Source: ${source}${page}\n${chunk.pageContent}`;
     })
     .join("\n\n---\n\n");
 
@@ -182,6 +184,74 @@ export async function rerank(
     ? `Recent Conversation Context:\n${historyContext}\n\nUser Question: ${originalQuestion}\n\nCandidate Passages to Grade:\n${numberedPassages}`
     : `User Question: ${originalQuestion}\n\nCandidate Passages to Grade:\n${numberedPassages}`;
 
+  // 3. Try TypeSafe System One (Jev) first for sub-second calibrated scoring
+  if (typeSafeClient) {
+    try {
+      const scoreMap = new Map();
+      const BATCH_SIZE = 10;
+      const batches = [];
+      for (let i = 0; i < candidateChunks.length; i += BATCH_SIZE) {
+        batches.push(
+          candidateChunks.slice(i, i + BATCH_SIZE).map((chunk, relIdx) => ({
+            chunk,
+            originalIndex: i + relIdx,
+          }))
+        );
+      }
+
+      await Promise.all(
+        batches.map(async (batch) => {
+          const state = {
+            user_question: originalQuestion,
+            conversation_history: historyContext || "None",
+          };
+          const questions = {};
+
+          batch.forEach((item, bIdx) => {
+            const chunk = item.chunk;
+            const source = chunk.metadata?.originalFileName || "Document";
+            const page = chunk.metadata?.pageNumber ? `, Page ${chunk.metadata.pageNumber}` : "";
+            state[`passage_${bIdx}`] = `Source: ${source}${page}\n${chunk.pageContent}`;
+
+            questions[`score_${bIdx}`] = score(
+              `How directly and authoritatively does passage_${bIdx} contain facts that answer the user question?`,
+              [
+                "0: Off-topic, tangential, boilerplate, or completely irrelevant to the question.",
+                "1: Mentions related topics or domain concepts but does not directly address the question.",
+                "2: Strongly relevant, provides key facts or crucial context for the answer.",
+                "3: Directly and authoritatively contains the answer to the question.",
+              ]
+            );
+          });
+
+          const res = await typeSafeClient.systemOne({ state, questions });
+          batch.forEach((item, bIdx) => {
+            const ans = res.answers?.[`score_${bIdx}`];
+            const rawScore = typeof ans?.score === "number" ? ans.score : 1.0;
+            // Scale 0-3 to 0-10
+            const scaledScore = Math.round((rawScore / 3) * 10 * 10) / 10;
+            scoreMap.set(item.originalIndex, scaledScore);
+          });
+        })
+      );
+
+      // Associate scores with candidate chunks
+      const scoredCandidates = candidateChunks.map((chunk, idx) => ({
+        chunk,
+        score: scoreMap.has(idx) ? scoreMap.get(idx) : 3,
+      }));
+
+      // Sort by relevance score descending
+      scoredCandidates.sort((a, b) => b.score - a.score);
+
+      // Apply MMR diversity filter to eliminate repetitive text
+      return mmrDiversityFilter(scoredCandidates, topN, lambda);
+    } catch (err) {
+      console.warn("⚠️ TypeSafe reranking failed, falling back to agent SDK:", err.message);
+    }
+  }
+
+  // 4. Fallback to Agent SDK runner
   try {
     const result = await run(relevanceScorerAgent, prompt);
     const scoreMap = new Map();

@@ -21,7 +21,7 @@ export const ChatSummarySchema = z.object({
 // 2. Define the Agent SDK Chat Context Summarizer Agent
 const chatSummarizerAgent = new Agent({
   name: "chat-context-compressor",
-  model: "gpt-4.1-mini",
+  model: "gpt-4.1-nano",
   outputType: ChatSummarySchema,
   instructions: `You are an expert conversation context compression engine for an AI research notebook platform.
 Your job is to implement Intelligent Pruning: shrink the conversational message volume by ~80% while ruthlessly preserving the critical 1% of essential facts, user goals, and conclusions needed to answer future chat questions.

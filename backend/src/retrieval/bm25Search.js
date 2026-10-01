@@ -164,3 +164,69 @@ export async function bm25Search(
     return [];
   }
 }
+
+/**
+ * Executes BM25 keyword search for multiple queries using a SINGLE shared corpus fetch & index.
+ * Eliminates duplicate MongoDB queries and duplicate tokenization when searching multiple variants.
+ *
+ * @param {string[]} queries - Array of search query strings
+ * @param {string[]|string} sourceIds - Selected source IDs
+ * @param {string} userId - User ID for tenant filtering
+ * @param {object} options - { k: number, exactTerms: string[] }
+ * @returns {Promise<Array<Array<object>>>} Array of result sets, one per input query
+ */
+export async function batchBM25Search(
+  queries = [],
+  sourceIds,
+  userId,
+  { k = 10, exactTerms = [] } = {}
+) {
+  const validQueries = queries.filter((q) => q && typeof q === "string" && q.trim());
+  if (validQueries.length === 0) return [];
+
+  const normalizedSourceIds = (Array.isArray(sourceIds) ? sourceIds : [sourceIds])
+    .filter(Boolean)
+    .map((id) => id.toString());
+
+  if (normalizedSourceIds.length === 0) return validQueries.map(() => []);
+
+  try {
+    // 1 single MongoDB query for all source chunks
+    const candidateChunks = await Chunk.find({
+      sourceId: { $in: normalizedSourceIds },
+      userId: userId.toString(),
+      level: "child",
+    })
+      .select("_id parentChunkId sourceId pageContent metadata")
+      .lean();
+
+    if (!candidateChunks || candidateChunks.length === 0) {
+      return validQueries.map(() => []);
+    }
+
+    // 1 single in-memory OkapiBM25 index built for the request
+    const bm25 = new OkapiBM25(candidateChunks);
+
+    // Score all queries against the pre-built index in <1ms each
+    return validQueries.map((query) => {
+      const ranked = bm25.search(query, exactTerms);
+      return ranked.slice(0, k).map(({ chunk, score }) => ({
+        chunkId: chunk._id.toString(),
+        parentChunkId: chunk.parentChunkId ? chunk.parentChunkId.toString() : null,
+        sourceId: chunk.sourceId ? chunk.sourceId.toString() : null,
+        score: score,
+        pageContent: chunk.pageContent,
+        metadata: chunk.metadata || {
+          sourceType: "text",
+          originalFileName: "Untitled",
+          pageNumber: 1,
+          url: null,
+        },
+      }));
+    });
+  } catch (error) {
+    console.error("❌ Batch BM25 keyword search failed:", error);
+    return validQueries.map(() => []);
+  }
+}
+

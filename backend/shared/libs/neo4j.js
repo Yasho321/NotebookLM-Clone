@@ -66,3 +66,27 @@ export async function closeNeo4jDriver() {
     console.log("🛑 Neo4j connection pool closed.");
   }
 }
+
+/**
+ * Ensures optimal Neo4j schema constraints and indexes exist.
+ * Runs idempotently to prevent unindexed full graph scans.
+ */
+export async function initNeo4jConstraints() {
+  try {
+    await executeCypher(`
+      CREATE CONSTRAINT user_id_unique IF NOT EXISTS
+      FOR (u:User) REQUIRE u.id IS UNIQUE
+    `);
+    await executeCypher(`
+      CREATE INDEX entity_name_idx IF NOT EXISTS
+      FOR (e:Entity) ON (e.name)
+    `);
+    await executeCypher(`
+      CREATE INDEX place_name_idx IF NOT EXISTS
+      FOR (p:Place) ON (p.name)
+    `);
+    console.log("🕸️ Neo4j indexes and constraints verified.");
+  } catch (err) {
+    console.warn("⚠️ Could not verify Neo4j constraints:", err.message);
+  }
+}

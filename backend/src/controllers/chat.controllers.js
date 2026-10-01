@@ -47,18 +47,42 @@ const activeStreams = new Map();
  * @param {object|null} trace - Optional trace session for observability
  * @returns {Promise<{ prompt: string, citations: Array, retrievalResult: object }>}
  */
-async function buildPrompt(message, userId, activeSources, previousHistory, rollingSummary, trace = null) {
+async function buildPrompt(
+  message,
+  userId,
+  activeSources,
+  previousHistory,
+  rollingSummary,
+  trace = null,
+  memoryPromise = null
+) {
   // 1. Concurrently execute optimized memory fetch + modular retrieval pipeline
-  const tStart = Date.now();
-  const [memoryData, retrievalResult] = await Promise.all([
-    fetchOptimizedMemory(message, userId),
-    retrievalPipeline(message, activeSources, userId, previousHistory),
-  ]);
+  const tMemStart = Date.now();
+  const memoryTask = Promise.resolve(memoryPromise || fetchOptimizedMemory(message, userId)).then(
+    (data) => {
+      if (trace) trace.setStepDuration("memoryMs", Date.now() - tMemStart);
+      return data;
+    }
+  );
 
-  if (trace) {
-    trace.setStepDuration("memoryMs", Date.now() - tStart);
-    trace.setRetrievalMetrics(retrievalResult.metadata);
-  }
+  const tRetStart = Date.now();
+  const retrievalTask = retrievalPipeline(
+    message,
+    activeSources,
+    userId,
+    previousHistory
+  ).then((result) => {
+    if (trace) {
+      trace.setStepDuration("retrievalMs", Date.now() - tRetStart);
+      trace.setRetrievalMetrics(result.metadata);
+    }
+    return result;
+  });
+
+  const [memoryData, retrievalResult] = await Promise.all([
+    memoryTask,
+    retrievalTask,
+  ]);
 
   const { userContext, factsText } = memoryData;
 
@@ -67,7 +91,17 @@ async function buildPrompt(message, userId, activeSources, previousHistory, roll
   let citations = [];
 
   if (retrievalResult.docs && retrievalResult.docs.length > 0) {
-    sourceEvidenceText = retrievalResult.docs
+    // Sort by source filename then page number for coherent reading order
+    const sortedDocs = [...retrievalResult.docs].sort((a, b) => {
+      const sourceA = a.metadata?.originalFileName || "";
+      const sourceB = b.metadata?.originalFileName || "";
+      if (sourceA !== sourceB) return sourceA.localeCompare(sourceB);
+      const pageA = a.metadata?.pageNumber || 0;
+      const pageB = b.metadata?.pageNumber || 0;
+      return pageA - pageB;
+    });
+
+    sourceEvidenceText = sortedDocs
       .map((doc, idx) => {
         const file = doc.metadata?.originalFileName || "Document";
         const page = doc.metadata?.pageNumber ? ` (Page ${doc.metadata.pageNumber})` : "";
@@ -76,7 +110,7 @@ async function buildPrompt(message, userId, activeSources, previousHistory, roll
       })
       .join("\n\n---\n\n");
 
-    citations = retrievalResult.docs.map((doc) => ({
+    citations = sortedDocs.map((doc) => ({
       sourceId:
         doc.sourceId && mongoose.Types.ObjectId.isValid(doc.sourceId)
           ? doc.sourceId
@@ -104,6 +138,19 @@ async function buildPrompt(message, userId, activeSources, previousHistory, roll
     });
   }
 
+  // Graduated grounding enforcement based on CRAG confidence score
+  const gradeScore = retrievalResult.grade?.score ?? 7;
+  let groundingDirective = "";
+  if (retrievalResult.strategy !== "DIRECT_ANSWER") {
+    if (gradeScore >= 7) {
+      groundingDirective = "GROUNDING: HIGH CONFIDENCE — Evidence is comprehensive. Answer directly from sources with inline citations.";
+    } else if (gradeScore >= 4) {
+      groundingDirective = "GROUNDING: PARTIAL EVIDENCE — Some relevant passages found but gaps exist. Clearly distinguish between what the sources say vs. what you are inferring. Use phrases like 'Based on the available sources...' and explicitly note where the documents do not cover the question.";
+    } else {
+      groundingDirective = "GROUNDING: LOW CONFIDENCE — Very limited evidence found. State what little the sources say, then explicitly note the information gap. Do not fill in missing facts with general knowledge unless you clearly label it as such.";
+    }
+  }
+
   // 3. Layer 1 Context Pruning: Combine rolling summary with last 50 messages
   const { recentMessages, summaryPromptBlock } = formatChatContextWithSummary(
     previousHistory,
@@ -123,10 +170,9 @@ ${factsText || "None recorded"}
 USER EPISODIC & GRAPH CONTEXT:
 ${userContext || "None recorded"}
 
-RETRIEVED DOCUMENT EVIDENCE (${retrievalResult.strategy}):
+${groundingDirective ? `${groundingDirective}\n` : ""}RETRIEVED DOCUMENT EVIDENCE (${retrievalResult.strategy}):
 ${sourceEvidenceText}
 ${retrievalResult.shouldRefuse ? "\nNOTE: Retrieval confidence is below threshold (< 3). Please inform the user that sources lack this information.\n" : ""}
-
 RECENT CONVERSATION (Last 50 turns):
 ${formattedDialogue || "No previous turns"}
 
@@ -344,6 +390,9 @@ export const createMessage = async (req, res) => {
       return res.status(400).json({ success: false, message: "No message provided" });
     }
 
+    // ── Early Memory Retrieval Dispatch (runs concurrently with chat DB validation) ──
+    const memoryPromise = fetchOptimizedMemory(message, userId, req.user?.facts);
+
     // ── Find and validate chat ownership ─────────────────────────────────
     const chat = await findChatOrFail(chatId, userId, res);
     if (!chat) return; // Response already sent by findChatOrFail
@@ -373,7 +422,8 @@ export const createMessage = async (req, res) => {
       activeSources,
       previousHistory,
       chat.rollingSummary,
-      trace
+      trace,
+      memoryPromise
     );
 
     // ── Send retrieval metadata as first SSE event (including traceId) ───

@@ -32,3 +32,15 @@ export async function ensurePayloadIndex(collectionName, fieldName) {
     console.error(`❌ Failed while ensuring index ${fieldName}:`, err);
   }
 }
+
+/**
+ * Initializes all required multi-tenant payload indexes across collections.
+ */
+export async function initQdrantIndexes() {
+  await Promise.allSettled([
+    ensurePayloadIndex("notebookLM-Collection", "metadata.userId"),
+    ensurePayloadIndex("notebookLM-Collection", "metadata.sourceId"),
+    ensurePayloadIndex("notebookLM-Collection", "metadata.level"),
+    ensurePayloadIndex("memory-notebookLM-Collection", "metadata.userId"),
+  ]);
+}

@@ -71,6 +71,9 @@ const sourceSchema = new Schema(
   },
 );
 
+sourceSchema.index({ userId: 1, createdAt: -1 });
+sourceSchema.index({ userId: 1, status: 1 });
+
 const Source = mongoose.model("Source", sourceSchema);
 
 export default Source;

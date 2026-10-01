@@ -1,6 +1,8 @@
 import "../../shared/libs/env.js";
 import { z } from "zod";
 import { Agent, run } from "@openai/agents";
+import { typeSafeClient } from "../../shared/libs/typesafe.js";
+import { noul } from "@typesafe-ai/sdk";
 
 // 1. Zod schema for structured channel routing decisions
 export const ChannelRoutingSchema = z.object({
@@ -20,7 +22,7 @@ export const ChannelRoutingSchema = z.object({
     ),
 });
 
-// 2. Define the Channel Router Agent
+// 2. Define the Channel Router Agent (Fallback)
 const channelRouterAgent = new Agent({
   name: "channel-router",
   model: "gpt-4.1-mini",
@@ -50,6 +52,9 @@ Analyze the given query and select which storage channels should be queried:
 
 /**
  * Determines which retrieval channels (VECTOR, BM25, MONGO) should be queried.
+ * Uses TypeSafe System One (Jev) for sub-100ms calibrated decisions,
+ * with automatic fallback to Agent SDK.
+ *
  * @param {string} question - The user query or translated rewrite.
  * @returns {Promise<{ channels: Set<string>, exactTerms: string[], reasoning: string }>}
  */
@@ -62,20 +67,61 @@ export async function routeQuery(question) {
     };
   }
 
+  // Extract quoted phrases or bracketed tokens for exact keyword anchoring
+  const quoteMatches = question.match(/"([^"]+)"|'([^']+)'/g) || [];
+  const extractedTerms = quoteMatches
+    .map((m) => m.replace(/["']/g, "").trim())
+    .filter(Boolean);
+
+  // 1. Try TypeSafe System One (Jev) for sub-100ms calibrated judgment
+  if (typeSafeClient) {
+    try {
+      const response = await typeSafeClient.systemOne({
+        state: { query: question },
+        questions: {
+          needs_bm25: noul(
+            "Does this search query contain exact technical identifiers, error codes, function/class names, version numbers, or domain jargon requiring exact keyword matching?"
+          ),
+          is_metadata_query: noul(
+            "Does this query ask about document counts, upload dates, or listing uploaded files rather than searching document contents?"
+          ),
+        },
+      });
+
+      const channels = new Set(["VECTOR"]);
+      const bm25Prob = response.answers.needs_bm25?.noul ?? 0;
+      const mongoProb = response.answers.is_metadata_query?.noul ?? 0;
+
+      if (bm25Prob >= 0.45 || extractedTerms.length > 0) {
+        channels.add("BM25");
+      }
+      if (mongoProb >= 0.7) {
+        channels.add("MONGO");
+      }
+
+      return {
+        channels,
+        exactTerms: extractedTerms,
+        reasoning: `TypeSafe Jev System One (BM25 prob: ${bm25Prob.toFixed(2)}, Mongo prob: ${mongoProb.toFixed(2)})`,
+      };
+    } catch (err) {
+      console.warn("⚠️ TypeSafe channel routing failed, falling back to agent SDK:", err.message);
+    }
+  }
+
+  // 2. Fallback to Agent SDK runner
   try {
     const prompt = `Query to route:\n${question}`;
     const result = await run(channelRouterAgent, prompt);
     const decision = result.finalOutput;
 
     return {
-      // Returns a Set for O(1) checks (e.g. channels.has("BM25"))
       channels: new Set(decision.channels),
       exactTerms: decision.exactTerms || [],
       reasoning: decision.reasoning,
     };
   } catch (error) {
     console.error("Channel router error, falling back to hybrid:", error);
-    // Graceful fallback: Hybrid search (Vector + BM25) ensures no missed results
     return {
       channels: new Set(["VECTOR", "BM25"]),
       exactTerms: [],
@@ -83,3 +129,4 @@ export async function routeQuery(question) {
     };
   }
 }
+

@@ -126,18 +126,35 @@ export async function enqueueMemoryExtractionIfNeeded(chat, userId) {
  * Prepares the conversation turns for prompt generation by combining the
  * persisted rolling summary with the most recent verbatim turns (Layer 1 context pruning).
  *
+ * When a rolling summary exists, it covers messages up to the last summarization batch
+ * boundary (multiples of 30). To avoid redundant overlap, we only include verbatim
+ * messages that are NOT yet covered by the summary.
+ *
  * @param {Array<object>} messages - Full list of chat messages
  * @param {string|null} rollingSummary - Persisted summary from MongoDB
  * @param {object} [options]
- * @param {number} [options.maxRecentTurns=50] - Number of recent user/assistant turns to keep verbatim
+ * @param {number} [options.maxRecentTurns=50] - Max number of recent turns to keep verbatim
+ * @param {number} [options.summaryBatchSize=30] - Batch size used by chatSummaryProcessor
  * @returns {{ recentMessages: Array<object>, summaryPromptBlock: string }}
  */
 export function formatChatContextWithSummary(
   messages = [],
   rollingSummary = null,
-  { maxRecentTurns = 50 } = {}
+  { maxRecentTurns = 50, summaryBatchSize = 30 } = {}
 ) {
-  const recentMessages = messages.slice(-maxRecentTurns);
+  let recentMessages;
+
+  if (rollingSummary && messages.length > summaryBatchSize) {
+    // Summary covers up to the most recent completed batch boundary.
+    // e.g., at 75 messages with batchSize=30, summary covers messages 0-59 (batches at 30 and 60).
+    // Only send messages 60+ verbatim to avoid overlap.
+    const completedBatches = Math.floor(messages.length / summaryBatchSize);
+    const lastSummarizedIndex = completedBatches * summaryBatchSize;
+    recentMessages = messages.slice(lastSummarizedIndex);
+  } else {
+    // No summary yet or message count is small — send last N turns
+    recentMessages = messages.slice(-maxRecentTurns);
+  }
 
   const summaryPromptBlock = rollingSummary
     ? `[PREVIOUS CONVERSATION ROLLING SUMMARY - CRITICAL FACTS TO PRESERVE]\n${rollingSummary}\n[END CONVERSATION SUMMARY]\n\n`

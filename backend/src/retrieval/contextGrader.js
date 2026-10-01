@@ -1,6 +1,8 @@
 import "../../shared/libs/env.js";
 import { z } from "zod";
 import { Agent, run } from "@openai/agents";
+import { typeSafeClient } from "../../shared/libs/typesafe.js";
+import { score, noul } from "@typesafe-ai/sdk";
 
 // 1. Zod schema for structured context grading and corrective diagnostics
 export const ContextGradeSchema = z.object({
@@ -31,7 +33,7 @@ export const ContextGradeSchema = z.object({
     ),
 });
 
-// 2. Define the Context Grader Agent
+// 2. Define the Context Grader Agent (Fallback)
 const contextGraderAgent = new Agent({
   name: "context-grader",
   model: "gpt-4.1-mini",
@@ -54,7 +56,8 @@ Your job is to evaluate the ENTIRE retrieved context package against the user's 
 
 /**
  * Evaluates whether the assembled retrieved passages collectively satisfy the user's question.
- * Used as the gatekeeper for Corrective RAG (CRAG) before final generation.
+ * Uses TypeSafe System One (Jev) for sub-100ms calibrated completeness scoring,
+ * with automatic fallback to Agent SDK.
  *
  * @param {string} question - The original user question.
  * @param {Array<object>} retrievedChunks - The top reranked and diversified chunks.
@@ -95,6 +98,49 @@ export async function gradeContext(
       .join("\n");
   }
 
+  // 3. Try TypeSafe System One (Jev) for sub-100ms calibrated grading
+  if (typeSafeClient) {
+    try {
+      const response = await typeSafeClient.systemOne({
+        state: {
+          user_question: question,
+          conversation_history: historyContext || "None",
+          retrieved_passages: contextSnippet,
+        },
+        questions: {
+          completeness: score(
+            "Rate the completeness and factual sufficiency of the retrieved passages for answering the user's question completely without hallucinating.",
+            [
+              "0: Completely off-topic or contains zero useful facts",
+              "1: Mentions related topics but vital facts or numbers needed to answer the core question are absent",
+              "2: Core answer is present in the passages, though minor peripheral details may be absent",
+              "3: Directly and authoritatively contains all key facts needed to answer the question completely",
+            ]
+          ),
+          is_sufficient: noul(
+            "Do the retrieved passages collectively contain sufficient facts to address the core user question?"
+          ),
+        },
+      });
+
+      const rawScore = response.answers.completeness?.score ?? 2;
+      const scaledScore = Math.round((rawScore / 3) * 10 * 10) / 10;
+      const noulProb = response.answers.is_sufficient?.noul ?? 0.5;
+      const isSufficient = noulProb >= 0.5 || scaledScore >= 6.0;
+
+      return {
+        score: scaledScore,
+        isSufficient,
+        reasoning: `TypeSafe Jev System One (Completeness: ${rawScore}/3, Sufficiency prob: ${noulProb.toFixed(2)})`,
+        missingInfo: isSufficient ? "None" : "Missing factual details to answer query",
+        suggestedKeywords: isSufficient ? [] : [question],
+      };
+    } catch (err) {
+      console.warn("⚠️ TypeSafe context grading failed, falling back to agent SDK:", err.message);
+    }
+  }
+
+  // 4. Fallback to Agent SDK runner
   const prompt = historyContext
     ? `Recent Conversation Context:\n${historyContext}\n\nUser Question: ${question}\n\nRetrieved Passages to Grade:\n${contextSnippet}`
     : `User Question: ${question}\n\nRetrieved Passages to Grade:\n${contextSnippet}`;
@@ -113,14 +159,14 @@ export async function gradeContext(
         : [],
     };
   } catch (error) {
-    console.error("❌ Context grading failed, proceeding with fallback:", error);
-    // Graceful fallback: Do not block generation on grader network/API hiccups
+    console.error("❌ Context grading failed, using conservative fallback:", error);
     return {
-      score: 7,
-      isSufficient: true,
-      reasoning: "Grader fallback due to error; assuming context is usable.",
-      missingInfo: "None",
-      suggestedKeywords: [],
+      score: 4,
+      isSufficient: false,
+      reasoning: "Grader unavailable; assuming moderate quality to allow corrective retrieval.",
+      missingInfo: "Unable to assess — grader error",
+      suggestedKeywords: [question],
     };
   }
 }
+
