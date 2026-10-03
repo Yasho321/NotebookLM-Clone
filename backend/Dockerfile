@@ -1,12 +1,12 @@
-FROM node:22-alpine AS builder
+# ── Stage 1: Install dependencies ──
+FROM oven/bun:1-alpine AS builder
 
 WORKDIR /app
-ENV PUPPETEER_SKIP_DOWNLOAD=true
-COPY package*.json ./
-RUN npm install --omit=dev --legacy-peer-deps
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile --production
 
-
-FROM node:22-alpine AS runner
+# ── Stage 2: Runtime ──
+FROM oven/bun:1-alpine AS runner
 
 WORKDIR /app
 
@@ -16,5 +16,4 @@ COPY . .
 ENV NODE_ENV=production
 EXPOSE 8080
 
-
-CMD ["npm", "start"]
+CMD ["bun", "src/index.js"]

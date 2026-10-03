@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon ./src/index.js",
-    "start": "node ./src/index.js"
+    "dev": "bun --watch ./src/index.js",
+    "start": "bun ./src/index.js"
   },
   "keywords": [],
   "author": "",
@@ -41,7 +41,6 @@
     "neo4j-driver": "^5.28.1",
     "openai": "^4.104.0",
     "pdf-parse": "^1.1.1",
-    "puppeteer": "^24.16.2",
     "uuid": "^14.0.2",
     "zod": "^4.6.5"
   }
