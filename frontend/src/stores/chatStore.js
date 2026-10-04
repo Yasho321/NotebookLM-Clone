@@ -268,6 +268,16 @@ export const useChatStore = create((set, get) => ({
 
       let accumulatedText = '';
       let accumulatedCitations = [];
+      let rafId = null;
+
+      const scheduleTokenUpdate = () => {
+        if (!rafId) {
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            set({ streamingContent: accumulatedText });
+          });
+        }
+      };
 
       await consumeSSEStream(res, {
         onMetadata: (data) => {
@@ -281,9 +291,14 @@ export const useChatStore = create((set, get) => ({
         },
         onToken: (chunk) => {
           accumulatedText += chunk;
-          set({ streamingContent: accumulatedText });
+          scheduleTokenUpdate();
         },
         onDone: (data) => {
+          if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
+
           const finalMessages = data.messages || [
             ...get().messages,
             {
@@ -306,10 +321,18 @@ export const useChatStore = create((set, get) => ({
           get().touchActiveChat();
         },
         onStopped: () => {
+          if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
           // Handled via stopGeneration or server interrupt
           set({ isStreaming: false, abortController: null });
         },
         onError: (err) => {
+          if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
           throw err;
         },
       });
@@ -456,6 +479,16 @@ export const useChatStore = create((set, get) => ({
 
       let accumulatedText = '';
       let accumulatedCitations = [];
+      let rafId = null;
+
+      const scheduleRegenerateUpdate = () => {
+        if (!rafId) {
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            set({ streamingContent: accumulatedText });
+          });
+        }
+      };
 
       await consumeSSEStream(res, {
         onMetadata: (data) => {
@@ -469,9 +502,14 @@ export const useChatStore = create((set, get) => ({
         },
         onToken: (chunk) => {
           accumulatedText += chunk;
-          set({ streamingContent: accumulatedText });
+          scheduleRegenerateUpdate();
         },
         onDone: (data) => {
+          if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
+
           const finalMessages = data.messages || [
             ...get().messages,
             {
@@ -493,9 +531,17 @@ export const useChatStore = create((set, get) => ({
           get().touchActiveChat();
         },
         onStopped: () => {
+          if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
           set({ isStreaming: false, abortController: null });
         },
         onError: (err) => {
+          if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
           throw err;
         },
       });
