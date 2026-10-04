@@ -7,10 +7,37 @@ import { z } from "zod";
 import { Agent, run } from "@openai/agents";
 import { processText } from "./textProcessor.js";
 import { processWeb } from "./webProcessor.js";
-import { ensurePayloadIndex } from "../../shared/libs/qdrant.js";
 import crypto from "crypto";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import Chunk from "../../shared/models/chunk.model.js";
+
+// Singleton embeddings instance
+const embeddings = new OpenAIEmbeddings({
+  model: "text-embedding-3-large",
+});
+
+let vectorStoreInstance = null;
+async function getVectorStore() {
+  if (!vectorStoreInstance) {
+    try {
+      vectorStoreInstance = await QdrantVectorStore.fromExistingCollection(
+        embeddings,
+        {
+          url: process.env.QUADRANT_URL,
+          apiKey: process.env.QUADRANT_API_KEY,
+          collectionName: "notebookLM-Collection",
+        }
+      );
+    } catch {
+      vectorStoreInstance = new QdrantVectorStore(embeddings, {
+        url: process.env.QUADRANT_URL,
+        apiKey: process.env.QUADRANT_API_KEY,
+        collectionName: "notebookLM-Collection",
+      });
+    }
+  }
+  return vectorStoreInstance;
+}
 
 // Structured output schema for document title and executive summary
 export const SourceSummarySchema = z.object({
@@ -129,11 +156,7 @@ export async function processSource(job) {
     const savedChildren = await Chunk.insertMany(childChunkInserts);
 
 
-    const embeddings = new OpenAIEmbeddings({
-      model: "text-embedding-3-large",
-    });
-
-    // 3. Split, embed, store in Qdrant (existing logic)
+    // 3. Store in Qdrant reusing singleton vectorStore
     const qdrantDocuments = savedChildren.map((child) => {
       return new Document({
         id: child.qdrantPointId,
@@ -155,20 +178,8 @@ export async function processSource(job) {
       });
     });
 
-
-    await ensurePayloadIndex("notebookLM-Collection", "metadata.userId");
-    await ensurePayloadIndex("notebookLM-Collection", "metadata.sourceId");
-    await ensurePayloadIndex("notebookLM-Collection", "metadata.level");
-
-    const vectorStore = await QdrantVectorStore.fromDocuments(
-      qdrantDocuments,
-      embeddings,
-      {
-        url: process.env.QUADRANT_URL,
-        apiKey: process.env.QUADRANT_API_KEY,
-        collectionName: "notebookLM-Collection",
-      },
-    );
+    const vectorStore = await getVectorStore();
+    await vectorStore.addDocuments(qdrantDocuments);
 
     // 4. Macro-context assembly from parent chunks (matches BROAD_SUMMARY in retrieval)
     // Instead of querying random vector chunks, we sample representative macro sections

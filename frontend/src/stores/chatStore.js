@@ -106,6 +106,30 @@ export const useChatStore = create((set, get) => ({
   },
 
   /**
+   * Optimistically update active chat timestamp and re-order chat list locally
+   * without incurring an unnecessary full network refetch after every message.
+   */
+  touchActiveChat: () => {
+    const activeId = get().activeChatId;
+    if (!activeId) return;
+    const currentChats = get().chats;
+    const chatIndex = currentChats.findIndex((c) => c._id === activeId);
+    if (chatIndex !== -1) {
+      const updatedChat = {
+        ...currentChats[chatIndex],
+        updatedAt: new Date().toISOString(),
+      };
+      set({
+        chats: [
+          updatedChat,
+          ...currentChats.slice(0, chatIndex),
+          ...currentChats.slice(chatIndex + 1),
+        ],
+      });
+    }
+  },
+
+  /**
    * Create a new chat session with specified or currently selected sources
    */
   createChat: async (sourceIds, title = null) => {
@@ -278,8 +302,8 @@ export const useChatStore = create((set, get) => ({
             abortController: null,
           });
 
-          // Refresh chat list to update updatedAt and previews
-          get().fetchChats();
+          // Locally touch active chat to update updatedAt and order without network trip
+          get().touchActiveChat();
         },
         onStopped: () => {
           // Handled via stopGeneration or server interrupt
@@ -466,7 +490,7 @@ export const useChatStore = create((set, get) => ({
             abortController: null,
           });
 
-          get().fetchChats();
+          get().touchActiveChat();
         },
         onStopped: () => {
           set({ isStreaming: false, abortController: null });

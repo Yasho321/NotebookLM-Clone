@@ -117,6 +117,46 @@ class OkapiBM25 {
  * @param {object} options - { k: number, exactTerms: string[] }
  * @returns {Promise<Array<{ chunkId: string, parentChunkId: string, sourceId: string, score: number, pageContent: string, metadata: object }>>}
  */
+// In-memory cache for OkapiBM25 instances keyed by `${userId}:${sortedSourceIds}`
+const bm25Cache = new Map();
+const BM25_CACHE_TTL_MS = 60 * 1000; // 60 seconds TTL
+
+async function getOrBuildBM25Index(normalizedSourceIds, userId) {
+  const cacheKey = `${userId}:${[...normalizedSourceIds].sort().join(",")}`;
+  const now = Date.now();
+  const cached = bm25Cache.get(cacheKey);
+
+  if (cached && cached.expiresAt > now) {
+    return cached.bm25;
+  }
+
+  const candidateChunks = await Chunk.find({
+    sourceId: { $in: normalizedSourceIds },
+    userId: userId.toString(),
+    level: "child",
+  })
+    .select("_id parentChunkId sourceId pageContent metadata")
+    .lean();
+
+  if (!candidateChunks || candidateChunks.length === 0) {
+    return null;
+  }
+
+  const bm25 = new OkapiBM25(candidateChunks);
+
+  if (bm25Cache.size > 100) {
+    const oldestKey = bm25Cache.keys().next().value;
+    bm25Cache.delete(oldestKey);
+  }
+
+  bm25Cache.set(cacheKey, {
+    bm25,
+    expiresAt: now + BM25_CACHE_TTL_MS,
+  });
+
+  return bm25;
+}
+
 export async function bm25Search(
   query,
   sourceIds,
@@ -132,18 +172,9 @@ export async function bm25Search(
   if (normalizedSourceIds.length === 0) return [];
 
   try {
-    // Fetch all child chunks belonging to the user's selected sources
-    const candidateChunks = await Chunk.find({
-      sourceId: { $in: normalizedSourceIds },
-      userId: userId.toString(),
-      level: "child",
-    })
-      .select("_id parentChunkId sourceId pageContent metadata")
-      .lean();
+    const bm25 = await getOrBuildBM25Index(normalizedSourceIds, userId);
+    if (!bm25) return [];
 
-    if (!candidateChunks || candidateChunks.length === 0) return [];
-
-    const bm25 = new OkapiBM25(candidateChunks);
     const ranked = bm25.search(query, exactTerms);
 
     return ranked.slice(0, k).map(({ chunk, score }) => ({
@@ -191,21 +222,10 @@ export async function batchBM25Search(
   if (normalizedSourceIds.length === 0) return validQueries.map(() => []);
 
   try {
-    // 1 single MongoDB query for all source chunks
-    const candidateChunks = await Chunk.find({
-      sourceId: { $in: normalizedSourceIds },
-      userId: userId.toString(),
-      level: "child",
-    })
-      .select("_id parentChunkId sourceId pageContent metadata")
-      .lean();
-
-    if (!candidateChunks || candidateChunks.length === 0) {
+    const bm25 = await getOrBuildBM25Index(normalizedSourceIds, userId);
+    if (!bm25) {
       return validQueries.map(() => []);
     }
-
-    // 1 single in-memory OkapiBM25 index built for the request
-    const bm25 = new OkapiBM25(candidateChunks);
 
     // Score all queries against the pre-built index in <1ms each
     return validQueries.map((query) => {

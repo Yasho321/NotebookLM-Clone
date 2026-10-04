@@ -1,15 +1,12 @@
 import "dotenv/config";
 import { Queue } from "bullmq";
+import { getSharedRedisClient } from "../../shared/libs/redis.js";
 
 /**
  * BullMQ Queue instance for background chat context compression
  */
 export const chatSummaryQueue = new Queue("chat-summary", {
-  connection: {
-    host: process.env.REDIS_HOST || "127.0.0.1",
-    port: Number(process.env.REDIS_PORT) || 6379,
-    ...(process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {}),
-  },
+  connection: getSharedRedisClient(),
 });
 
 /**
@@ -66,11 +63,7 @@ export async function enqueueChatSummaryIfNeeded(chat, userId) {
  * BullMQ Queue instance for background long-term memory extraction (factual & episodic)
  */
 export const memoryExtractionQueue = new Queue("memory-extraction", {
-  connection: {
-    host: process.env.REDIS_HOST || "127.0.0.1",
-    port: Number(process.env.REDIS_PORT) || 6379,
-    ...(process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {}),
-  },
+  connection: getSharedRedisClient(),
 });
 
 /**

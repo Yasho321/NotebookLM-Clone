@@ -2,6 +2,7 @@ import "../shared/libs/env.js";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import compression from "compression";
 import db from "../shared/libs/db.js";
 import authRoutes from "./routes/user.routes.js";
 import sourceRouter from "./routes/source.routes.js";
@@ -13,6 +14,23 @@ import { initQdrantIndexes } from "../shared/libs/qdrant.js";
 const app = express();
 
 const port = process.env.PORT || 8080;
+
+app.use(
+  compression({
+    filter: (req, res) => {
+      // Never compress SSE streams or streaming message endpoints to ensure instant token delivery
+      if (
+        req.path?.includes("/message") ||
+        req.path?.includes("/regenerate") ||
+        req.headers.accept?.includes("text/event-stream") ||
+        res.getHeader("content-type")?.includes("text/event-stream")
+      ) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  })
+);
 
 app.use(
   cors({

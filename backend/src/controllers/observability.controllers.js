@@ -113,53 +113,108 @@ export const getAggregatedMetrics = async (req, res) => {
       });
     }
 
-    // Aggregate statistics across the last 500 traces
-    const recentTraces = await TraceLog.find()
-      .select("duration stepDurations retrievalMetrics error tokenUsage createdAt")
-      .sort({ createdAt: -1 })
-      .limit(500)
-      .lean();
+    // Aggregate statistics across the last 500 traces using database-level aggregation
+    const [aggResult] = await TraceLog.aggregate([
+      { $sort: { createdAt: -1 } },
+      { $limit: 500 },
+      {
+        $group: {
+          _id: null,
+          sampleSize: { $sum: 1 },
+          totalDuration: { $sum: { $ifNull: ["$duration", 0] } },
+          totalRetrieval: { $sum: { $ifNull: ["$stepDurations.retrievalMs", 0] } },
+          totalGeneration: { $sum: { $ifNull: ["$stepDurations.generationMs", 0] } },
+          errorCount: {
+            $sum: {
+              $cond: [{ $ifNull: ["$error", false] }, 1, 0],
+            },
+          },
+          refusalCount: {
+            $sum: {
+              $cond: [{ $eq: ["$retrievalMetrics.refused", true] }, 1, 0],
+            },
+          },
+          retryCount: {
+            $sum: {
+              $cond: [{ $gt: ["$retrievalMetrics.correctiveRetries", 0] }, 1, 0],
+            },
+          },
+          gradeSum: {
+            $sum: {
+              $cond: [
+                { $eq: [{ $type: "$retrievalMetrics.contextGradeScore" }, "number"] },
+                "$retrievalMetrics.contextGradeScore",
+                0,
+              ],
+            },
+          },
+          gradeCount: {
+            $sum: {
+              $cond: [
+                { $eq: [{ $type: "$retrievalMetrics.contextGradeScore" }, "number"] },
+                1,
+                0,
+              ],
+            },
+          },
+          strategies: { $push: "$retrievalMetrics.strategy" },
+          channels: { $push: "$retrievalMetrics.channelsSearched" },
+        },
+      },
+    ]);
 
-    let totalDuration = 0;
-    let totalRetrieval = 0;
-    let totalGeneration = 0;
-    let refusalCount = 0;
-    let retryCount = 0;
-    let gradeSum = 0;
-    let gradeCount = 0;
-    let errorCount = 0;
+    if (!aggResult || aggResult.sampleSize === 0) {
+      return res.status(200).json({
+        success: true,
+        metrics: {
+          totalRuns: totalTraces,
+          sampleSize: 0,
+          avgDurationMs: 0,
+          avgRetrievalMs: 0,
+          avgGenerationMs: 0,
+          errorRate: "0.0%",
+          refusalRate: "0.0%",
+          retryRate: "0.0%",
+          avgGradeScore: 0,
+          strategyDistribution: {},
+          channelUsage: { VECTOR: 0, BM25: 0, HYDE: 0 },
+        },
+      });
+    }
+
+    const {
+      sampleSize,
+      totalDuration,
+      totalRetrieval,
+      totalGeneration,
+      errorCount,
+      refusalCount,
+      retryCount,
+      gradeSum,
+      gradeCount,
+      strategies,
+      channels,
+    } = aggResult;
 
     const strategyMap = {};
-    const channelMap = { VECTOR: 0, BM25: 0, HYDE: 0 };
-
-    for (const t of recentTraces) {
-      totalDuration += t.duration || 0;
-      totalRetrieval += t.stepDurations?.retrievalMs || 0;
-      totalGeneration += t.stepDurations?.generationMs || 0;
-
-      if (t.error) errorCount++;
-
-      const rm = t.retrievalMetrics || {};
-      if (rm.refused) refusalCount++;
-      if (rm.correctiveRetries > 0) retryCount++;
-
-      if (typeof rm.contextGradeScore === "number") {
-        gradeSum += rm.contextGradeScore;
-        gradeCount++;
-      }
-
-      if (rm.strategy) {
-        strategyMap[rm.strategy] = (strategyMap[rm.strategy] || 0) + 1;
-      }
-
-      if (Array.isArray(rm.channelsSearched)) {
-        for (const ch of rm.channelsSearched) {
-          channelMap[ch] = (channelMap[ch] || 0) + 1;
+    if (Array.isArray(strategies)) {
+      for (const strat of strategies) {
+        if (strat) {
+          strategyMap[strat] = (strategyMap[strat] || 0) + 1;
         }
       }
     }
 
-    const sampleSize = recentTraces.length;
+    const channelMap = { VECTOR: 0, BM25: 0, HYDE: 0 };
+    if (Array.isArray(channels)) {
+      for (const chList of channels) {
+        if (Array.isArray(chList)) {
+          for (const ch of chList) {
+            channelMap[ch] = (channelMap[ch] || 0) + 1;
+          }
+        }
+      }
+    }
 
     const metrics = {
       totalRuns: totalTraces,

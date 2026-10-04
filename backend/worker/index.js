@@ -5,9 +5,11 @@ import { processChatSummary } from "./processors/chatSummaryProcessor.js";
 import { processMemoryExtraction } from "./processors/memoryProcessor.js";
 import { processTraceLogging } from "./processors/traceProcessor.js";
 import db from "../shared/libs/db.js";
+import { initQdrantIndexes } from "../shared/libs/qdrant.js";
 
-// Connect to MongoDB
-db();
+// Connect to MongoDB with worker pool and ensure Qdrant indexes are ready
+await db({ maxPoolSize: 10 });
+await initQdrantIndexes().catch((e) => console.warn("Qdrant init error in worker:", e.message));
 
 const redisConnection = {
   host: process.env.REDIS_HOST,

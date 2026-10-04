@@ -5,13 +5,13 @@ import { Queue } from "bullmq";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { v4 as uuidv4 } from "uuid";
 import { s3 } from "../../shared/libs/s3.js";
+import { getSharedRedisClient } from "../../shared/libs/redis.js";
 
 const sourceQueue = new Queue("process-source", {
-  connection: {
-    host: process.env.REDIS_HOST,
-    port: process.env.REDIS_PORT,
-  },
+  connection: getSharedRedisClient(),
 });
+
+const presignedUrlCache = new Map();
 
 export const text2 = async (req, res) => {
   try {
@@ -34,6 +34,7 @@ export const text2 = async (req, res) => {
       userId,
       type: "text-paste",
       textContent: text,
+      status: "queued",
     });
 
     await sourceQueue.add("process-source", {
@@ -43,10 +44,6 @@ export const text2 = async (req, res) => {
       type: source.type,
       typeSpecificData: source.textContent,
       mimeType: source.mimeType,
-    });
-
-    await Source.findByIdAndUpdate(source._id, {
-      status: "queued",
     });
 
     return res.status(200).json({
@@ -87,6 +84,7 @@ export const web2 = async (req, res) => {
       userId,
       type: "link",
       webURL: url,
+      status: "queued",
     });
     await sourceQueue.add("process-source", {
       sourceId: source._id.toString(),
@@ -95,9 +93,6 @@ export const web2 = async (req, res) => {
       type: source.type,
       typeSpecificData: source.webURL,
       mimeType: source.mimeType,
-    });
-    await Source.findByIdAndUpdate(source._id, {
-      status: "queued",
     });
     return res.status(200).json({
       success: true,
@@ -128,23 +123,16 @@ export const getSources = async (req, res) => {
     }
     const sources = await Source.find({
       userId,
-    });
-
-    if (!sources) {
-      return res.status(400).json({
-        success: false,
-        message: "Unable to fetch sources",
-      });
-    }
-
-    const sourcesToReturn = sources.filter((source) => {
-      return source.status != "uploading";
-    });
+      status: { $ne: "uploading" },
+    })
+      .select("-textContent")
+      .sort({ createdAt: -1 })
+      .lean();
 
     return res.status(200).json({
       success: true,
       message: "Sources fetched successfully",
-      sources: sourcesToReturn,
+      sources: sources || [],
     });
   } catch (error) {
     console.log(error);
@@ -263,18 +251,18 @@ export const confirmUpload = async (req, res) => {
       });
     }
 
-    await sourceQueue.add("process-source", {
-      sourceId: source._id.toString(),
-      userId: userId.toString(),
-      s3Key: source.s3Key,
-      type: source.type,
-      typeSpecificData: source.textContent,
-      mimeType: source.mimeType,
-    });
-
-    await Source.findByIdAndUpdate(`${source._id}`, {
-      status: "queued",
-    });
+    source.status = "queued";
+    await Promise.all([
+      source.save(),
+      sourceQueue.add("process-source", {
+        sourceId: source._id.toString(),
+        userId: userId.toString(),
+        s3Key: source.s3Key,
+        type: source.type,
+        typeSpecificData: source.textContent,
+        mimeType: source.mimeType,
+      }),
+    ]);
 
     return res.status(200).json({
       success: true,
@@ -314,7 +302,7 @@ export const getStatus = async (req, res) => {
       });
     }
 
-    const source = await Source.findById(sourceId);
+    const source = await Source.findById(sourceId).lean();
     if (!source) {
       return res.status(404).json({
         success: false,
@@ -367,7 +355,7 @@ export const getViewUrl = async (req, res) => {
       });
     }
 
-    const source = await Source.findById(sourceId);
+    const source = await Source.findById(sourceId).lean();
     if (!source) {
       return res.status(404).json({
         success: false,
@@ -389,15 +377,33 @@ export const getViewUrl = async (req, res) => {
     }
 
     const exp = 3600;
+    const now = Date.now();
+    const cacheKey = `${userId}:${source.s3Key}`;
+    const cached = presignedUrlCache.get(cacheKey);
+    let presignedUrl;
 
-    const presignedUrl = await getSignedUrl(
-      s3,
-      new GetObjectCommand({
-        Bucket: process.env.S3_BUCKET,
-        Key: source.s3Key,
-      }),
-      { expiresIn: exp },
-    );
+    if (cached && cached.expiresAt > now + 300 * 1000) {
+      presignedUrl = cached.url;
+    } else {
+      presignedUrl = await getSignedUrl(
+        s3,
+        new GetObjectCommand({
+          Bucket: process.env.S3_BUCKET,
+          Key: source.s3Key,
+        }),
+        { expiresIn: exp },
+      );
+
+      if (presignedUrlCache.size > 500) {
+        const oldestKey = presignedUrlCache.keys().next().value;
+        presignedUrlCache.delete(oldestKey);
+      }
+
+      presignedUrlCache.set(cacheKey, {
+        url: presignedUrl,
+        expiresAt: now + exp * 1000,
+      });
+    }
 
     return res.status(200).json({
       success: true,

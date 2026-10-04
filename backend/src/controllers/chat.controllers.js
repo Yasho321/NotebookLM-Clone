@@ -349,9 +349,10 @@ export const listChats = async (req, res) => {
     }
 
     const chats = await Chat.find({ userId })
-      .select("sourceIds title rollingSummary createdAt updatedAt")
+      .select("sourceIds title createdAt updatedAt")
       .populate("sourceIds", "title originalFileName type status")
-      .sort({ updatedAt: -1 });
+      .sort({ updatedAt: -1 })
+      .lean();
 
     return res.status(200).json({
       success: true,
@@ -443,10 +444,16 @@ export const createMessage = async (req, res) => {
 
     const refinedRes = fullText.trim();
 
-    // ── Persist messages to DB ───────────────────────────────────────────
-    chat.messages.push({ role: "user", content: message });
-    chat.messages.push({ role: "assistant", content: refinedRes, citations });
-    await chat.save();
+    // ── Persist messages to DB atomically ────────────────────────────────
+    const userMsg = { role: "user", content: message };
+    const assistantMsg = { role: "assistant", content: refinedRes, citations };
+    chat.messages.push(userMsg);
+    chat.messages.push(assistantMsg);
+
+    await Chat.findByIdAndUpdate(chat._id, {
+      $push: { messages: { $each: [userMsg, assistantMsg] } },
+      $set: { updatedAt: new Date() },
+    });
 
     // ── Asynchronously complete execution trace in background ────────────
     trace.complete({ response: refinedRes });
@@ -658,9 +665,14 @@ export const regenerateMessage = async (req, res) => {
 
     const refinedRes = fullText.trim();
 
-    // ── Persist the new assistant message ─────────────────────────────────
-    chat.messages.push({ role: "assistant", content: refinedRes, citations });
-    await chat.save();
+    // ── Persist the new assistant message atomically ──────────────────────
+    const assistantMsg = { role: "assistant", content: refinedRes, citations };
+    chat.messages.push(assistantMsg);
+
+    await Chat.findByIdAndUpdate(chat._id, {
+      $push: { messages: assistantMsg },
+      $set: { updatedAt: new Date() },
+    });
 
     // ── Asynchronously complete execution trace in background ────────────
     trace.complete({ response: refinedRes });
@@ -753,11 +765,12 @@ export const savePartialResponse = async (req, res) => {
     const chat = await findChatOrFail(chatId, userId, res);
     if (!chat) return;
 
-    // Only push if the user message isn't already the last user message
-    // (it may have been saved before stop in some race conditions)
+    const msgsToPush = [];
     const lastUserMsg = [...chat.messages].reverse().find((m) => m.role === "user");
     if (!lastUserMsg || lastUserMsg.content !== userMessage) {
-      chat.messages.push({ role: "user", content: userMessage });
+      const uMsg = { role: "user", content: userMessage };
+      chat.messages.push(uMsg);
+      msgsToPush.push(uMsg);
     }
 
     const cleanCitations = Array.isArray(citations)
@@ -776,13 +789,20 @@ export const savePartialResponse = async (req, res) => {
         }))
       : [];
 
-    chat.messages.push({
+    const aMsg = {
       role: "assistant",
       content: partialResponse,
       citations: cleanCitations,
-    });
+    };
+    chat.messages.push(aMsg);
+    msgsToPush.push(aMsg);
 
-    await chat.save();
+    if (msgsToPush.length > 0) {
+      await Chat.findByIdAndUpdate(chat._id, {
+        $push: { messages: { $each: msgsToPush } },
+        $set: { updatedAt: new Date() },
+      });
+    }
 
     // ── Fire-and-forget background workers ───────────────────────────────
     enqueueMemoryExtractionIfNeeded(chat, userId).catch((err) =>
@@ -819,21 +839,21 @@ export const getChat = async (req, res) => {
       return res.status(400).json({ success: false, message: "Not Authorized" });
     }
 
-    const chat = await findChatOrFail(chatId, userId, res);
-    if (!chat) return;
+    const chat = await Chat.findOne({ _id: chatId, userId })
+      .populate("sourceIds", "title originalFileName type status")
+      .lean();
 
-    await chat.populate("sourceIds", "title originalFileName type status");
+    if (!chat) {
+      return res.status(404).json({ success: false, message: "Chat not found" });
+    }
 
     const rawMessages = chat.messages || [];
 
     // Ensure each message strictly includes its own citations
-    const messages = rawMessages.map((m) => {
-      const msgObj = m.toObject ? m.toObject() : { ...m };
-      return {
-        ...msgObj,
-        citations: Array.isArray(msgObj.citations) ? msgObj.citations : [],
-      };
-    });
+    const messages = rawMessages.map((m) => ({
+      ...m,
+      citations: Array.isArray(m.citations) ? m.citations : [],
+    }));
 
     return res.status(200).json({
       success: true,
