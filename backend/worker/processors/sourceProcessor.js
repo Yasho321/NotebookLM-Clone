@@ -39,6 +39,17 @@ async function getVectorStore() {
   return vectorStoreInstance;
 }
 
+// Singleton text splitters to prevent recompiling regexes and split patterns per job
+const parentSplitter = new RecursiveCharacterTextSplitter({
+  chunkSize: 3600, // ~900 tokens
+  chunkOverlap: 600, // ~150 tokens
+});
+
+const childSplitter = new RecursiveCharacterTextSplitter({
+  chunkSize: 800, // ~200 tokens
+  chunkOverlap: 200, // ~50 tokens
+});
+
 // Structured output schema for document title and executive summary
 export const SourceSummarySchema = z.object({
   title: z
@@ -97,19 +108,9 @@ export async function processSource(job) {
       throw new Error("No readable text content extracted from source");
     }
 
-    const parentSplitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 3600, // ~900 tokens
-      chunkOverlap: 600, // ~150 tokens
-    });
-
-     const childSplitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 800, // ~200 tokens
-      chunkOverlap: 200, // ~50 tokens
-    });
-
     const parentDocs = await parentSplitter.splitDocuments(docs);
 
-     const parentChunkInserts = parentDocs.map((pDoc, idx) => ({
+    const parentChunkInserts = parentDocs.map((pDoc, idx) => ({
       sourceId: source._id,
       userId: source.userId,
       level: "parent",
@@ -132,6 +133,11 @@ export async function processSource(job) {
     const childChunkInserts = [];
     let childGlobalIdx = 0;
     for (const parent of savedParents) {
+      // Extract metadata once per parent chunk instead of repeatedly inside the child loop
+      const parentMeta = parent.metadata
+        ? (parent.metadata.toObject ? parent.metadata.toObject() : { ...parent.metadata })
+        : {};
+
       const childTexts = await childSplitter.splitText(parent.pageContent);
       for (const text of childTexts) {
         const trimmed = (text || "").trim();
@@ -146,7 +152,7 @@ export async function processSource(job) {
           pageContent: trimmed,
           chunkIndex: childGlobalIdx++,
           metadata: {
-            ...parent.toObject().metadata,
+            ...parentMeta,
             charCount: trimmed.length,
           },
           qdrantPointId: crypto.randomUUID(),
