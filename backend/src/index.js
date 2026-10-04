@@ -17,6 +17,8 @@ const port = process.env.PORT || 8080;
 
 app.use(
   compression({
+    level: 1,
+    threshold: 1024,
     filter: (req, res) => {
       // Never compress SSE streams or streaming message endpoints to ensure instant token delivery
       if (
