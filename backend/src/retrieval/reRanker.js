@@ -40,24 +40,35 @@ Be strict — only give high scores to passages that actually answer the questio
 });
 
 /**
- * Computes Jaccard token similarity between two text passages.
- * Used by MMR to detect and penalize near-duplicate or overlapping chunks.
+ * Computes Jaccard token similarity between two token Sets.
+ * Iterates over the smaller set for maximum CPU efficiency.
  */
-function computeTextSimilarity(textA, textB) {
-  const tokenize = (t) =>
-    new Set((t || "").toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/));
-  const setA = tokenize(textA);
-  const setB = tokenize(textB);
+function computeSetSimilarity(setA, setB) {
+  if (!setA || !setB || setA.size === 0 || setB.size === 0) return 0;
 
-  if (setA.size === 0 || setB.size === 0) return 0;
+  const [smaller, larger] = setA.size < setB.size ? [setA, setB] : [setB, setA];
 
   let intersection = 0;
-  for (const token of setA) {
-    if (setB.has(token)) intersection++;
+  for (const token of smaller) {
+    if (larger.has(token)) intersection++;
   }
 
   const union = setA.size + setB.size - intersection;
   return union === 0 ? 0 : intersection / union;
+}
+
+function tokenizeToSet(text) {
+  return new Set(
+    (text || "")
+      .toLowerCase()
+      .replace(/[^\w\s]/g, "")
+      .split(/\s+/)
+      .filter(Boolean)
+  );
+}
+
+function computeTextSimilarity(textA, textB) {
+  return computeSetSimilarity(tokenizeToSet(textA), tokenizeToSet(textB));
 }
 
 /**
@@ -80,8 +91,14 @@ function mmrDiversityFilter(scoredCandidates, topN = 8, lambda = 0.7) {
     }));
   }
 
+  // Pre-tokenize each candidate chunk ONCE: O(N) instead of O(N * K)
+  const candidatePool = scoredCandidates.map((item) => ({
+    ...item,
+    tokenSet: tokenizeToSet(item.chunk?.pageContent),
+  }));
+
   const selected = [];
-  const remaining = [...scoredCandidates];
+  const remaining = [...candidatePool];
 
   while (selected.length < topN && remaining.length > 0) {
     let bestIndex = 0;
@@ -92,13 +109,10 @@ function mmrDiversityFilter(scoredCandidates, topN = 8, lambda = 0.7) {
       // Normalize relevance score from [0, 10] to [0, 1]
       const normalizedRelevance = candidate.score / 10;
 
-      // Max similarity against already chosen chunks
+      // Max similarity against already chosen chunks using precomputed token sets
       let maxSimToSelected = 0;
       for (const sel of selected) {
-        const sim = computeTextSimilarity(
-          candidate.chunk.pageContent,
-          sel.chunk.pageContent
-        );
+        const sim = computeSetSimilarity(candidate.tokenSet, sel.tokenSet);
         if (sim > maxSimToSelected) maxSimToSelected = sim;
       }
 

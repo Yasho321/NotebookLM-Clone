@@ -26,19 +26,35 @@ class OkapiBM25 {
     this.documents = documents;
     this.corpusSize = documents.length;
 
-    // Precompute document lengths and average document length
-    this.docTokens = [];
-    let totalLength = 0;
+    this.docLengths = new Float64Array(this.corpusSize);
     this.docFreqs = new Map(); // term -> count of docs containing term
+    this.invertedIndex = new Map(); // term -> Array<{ docIdx: number, tf: number }>
+
+    let totalLength = 0;
 
     for (let i = 0; i < this.corpusSize; i++) {
       const tokens = tokenize(documents[i].pageContent);
-      this.docTokens.push(tokens);
-      totalLength += tokens.length;
+      const len = tokens.length;
+      this.docLengths[i] = len;
+      totalLength += len;
 
-      const uniqueInDoc = new Set(tokens);
-      for (const term of uniqueInDoc) {
+      // Count term frequencies within this document
+      const termFreqs = new Map();
+      for (let t = 0; t < len; t++) {
+        const term = tokens[t];
+        termFreqs.set(term, (termFreqs.get(term) || 0) + 1);
+      }
+
+      // Populate document frequencies and inverted index postings
+      for (const [term, tf] of termFreqs.entries()) {
         this.docFreqs.set(term, (this.docFreqs.get(term) || 0) + 1);
+
+        let postings = this.invertedIndex.get(term);
+        if (!postings) {
+          postings = [];
+          this.invertedIndex.set(term, postings);
+        }
+        postings.push({ docIdx: i, tf });
       }
     }
 
@@ -54,7 +70,9 @@ class OkapiBM25 {
   }
 
   /**
-   * Scores all documents against a query string.
+   * Scores documents against a query string using the inverted index.
+   * Only visits documents that actually contain query terms.
+   *
    * @param {string} query
    * @param {string[]} exactTerms - Optional verbatim keywords extracted by queryRouter
    * @returns {Array<{ chunk: object, score: number }>}
@@ -63,45 +81,50 @@ class OkapiBM25 {
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0 || this.corpusSize === 0) return [];
 
-    const scores = [];
+    // Accumulate scores only for documents containing at least one query term
+    const candidateScores = new Map();
 
-    for (let i = 0; i < this.corpusSize; i++) {
-      const tokens = this.docTokens[i];
-      const docLength = tokens.length;
-      const doc = this.documents[i];
+    for (const qTerm of queryTokens) {
+      const postings = this.invertedIndex.get(qTerm);
+      if (!postings || postings.length === 0) continue;
 
-      // Calculate term frequencies in this document
-      const termFreqs = new Map();
-      for (const t of tokens) {
-        termFreqs.set(t, (termFreqs.get(t) || 0) + 1);
-      }
+      const idfVal = this.idf(qTerm);
+      const idfWeight = idfVal * (this.k1 + 1);
 
-      let bm25Score = 0;
-
-      for (const qTerm of queryTokens) {
-        const tf = termFreqs.get(qTerm) || 0;
-        if (tf === 0) continue;
-
-        const idfVal = this.idf(qTerm);
-        const numerator = tf * (this.k1 + 1);
+      for (let p = 0; p < postings.length; p++) {
+        const { docIdx, tf } = postings[p];
+        const docLength = this.docLengths[docIdx];
         const denominator =
           tf + this.k1 * (1 - this.b + this.b * (docLength / this.avgDocLength));
 
-        bm25Score += idfVal * (numerator / denominator);
+        const scoreContrib = idfWeight * (tf / denominator);
+        candidateScores.set(
+          docIdx,
+          (candidateScores.get(docIdx) || 0) + scoreContrib
+        );
       }
+    }
+
+    if (candidateScores.size === 0) return [];
+
+    const scores = [];
+
+    for (const [docIdx, bm25Score] of candidateScores.entries()) {
+      let finalScore = bm25Score;
+      const doc = this.documents[docIdx];
 
       // Verbatim exact-term match bonus (e.g. error codes, specific model names)
       if (exactTerms.length > 0) {
         const contentLower = doc.pageContent.toLowerCase();
         for (const exact of exactTerms) {
           if (exact && contentLower.includes(exact.toLowerCase())) {
-            bm25Score *= 1.5; // 50% boost for verbatim phrase match
+            finalScore *= 1.5; // 50% boost for verbatim phrase match
           }
         }
       }
 
-      if (bm25Score > 0) {
-        scores.push({ chunk: doc, score: bm25Score });
+      if (finalScore > 0) {
+        scores.push({ chunk: doc, score: finalScore });
       }
     }
 
