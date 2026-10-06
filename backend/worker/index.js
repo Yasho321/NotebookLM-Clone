@@ -1,20 +1,21 @@
 import "../shared/libs/env.js";
 import { Worker } from "bullmq";
 import { processSource } from "./processors/sourceProcessor.js";
+import { processSourceDeletion } from "./processors/deleteSourceProcessor.js";
 import { processChatSummary } from "./processors/chatSummaryProcessor.js";
 import { processMemoryExtraction } from "./processors/memoryProcessor.js";
 import { processTraceLogging } from "./processors/traceProcessor.js";
 import db from "../shared/libs/db.js";
 import { initQdrantIndexes } from "../shared/libs/qdrant.js";
+import { redisConfig } from "../shared/libs/redis.js";
 
 // Connect to MongoDB with worker pool and ensure Qdrant indexes are ready
 await db({ maxPoolSize: 10 });
 await initQdrantIndexes().catch((e) => console.warn("Qdrant init error in worker:", e.message));
 
-const redisConnection = {
-  host: process.env.REDIS_HOST,
-  port: process.env.REDIS_PORT,
-};
+// Reuse the shared Redis config (includes REDIS_PASSWORD + maxRetriesPerRequest: null,
+// which BullMQ requires) instead of a partial host/port-only connection.
+const redisConnection = redisConfig;
 
 // 1. Source ingestion worker
 const sourceWorker = new Worker(
@@ -39,6 +40,27 @@ sourceWorker.on("completed", (job) => {
 
 sourceWorker.on("failed", (job, err) => {
   console.error(`❌ Source job ${job.id} failed:`, err.message);
+});
+
+// 1b. Source deletion worker (cascade: chats → vectors → chunks → S3 → doc)
+const deleteSourceWorker = new Worker(
+  "delete-source",
+  async (job) => {
+    console.log(`Processing source deletion job ${job.id} for source ${job.data.sourceId}`);
+    await processSourceDeletion(job);
+  },
+  {
+    connection: redisConnection,
+    concurrency: 3,
+  }
+);
+
+deleteSourceWorker.on("completed", (job) => {
+  console.log(`✅ Source deletion job ${job.id} completed`);
+});
+
+deleteSourceWorker.on("failed", (job, err) => {
+  console.error(`❌ Source deletion job ${job.id} failed:`, err.message);
 });
 
 // 2. Chat Context Pruning & Rolling Summarization worker (after every 30 messages)
