@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { axiosInstance } from '../lib/axios';
 import { toast } from 'sonner';
+import { identifyUser, resetAnalytics, capture } from '../lib/analytics';
 
 export const useAuthStore = create((set) => ({
   authUser: null,
@@ -17,9 +18,10 @@ export const useAuthStore = create((set) => ({
     try {
       set({ isCheckingAuth: true });
       const response = await axiosInstance.get('/auth/me');
-      set({ 
+      set({
         authUser: response.data.user
       });
+      identifyUser(response.data.user);
     } catch (error) {
       console.error("Check auth error:", error);
       localStorage.removeItem('authToken');
@@ -41,10 +43,12 @@ export const useAuthStore = create((set) => ({
         localStorage.setItem('authToken', token);
       }
       
-      set({ 
+      set({
         authUser: user
       });
-      
+      identifyUser(user);
+      capture('user_logged_in');
+
       toast.success("Login successful");
       return { success: true };
     } catch (error) {
@@ -67,10 +71,12 @@ export const useAuthStore = create((set) => ({
         localStorage.setItem('authToken', token);
       }
       
-      set({ 
+      set({
         authUser: user
       });
-      
+      identifyUser(user);
+      capture('user_registered');
+
       toast.success("Registration successful");
       return { success: true };
     } catch (error) {
@@ -99,7 +105,7 @@ export const useAuthStore = create((set) => ({
             .replace(/^ +/, "")
             .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
         });
-      } catch (e) {
+      } catch {
         // ignore
       }
 
@@ -109,6 +115,7 @@ export const useAuthStore = create((set) => ({
       }
 
       set({ authUser: null });
+      resetAnalytics();
       toast.success("Logged out successfully");
 
       // Redirect if currently on workspace
