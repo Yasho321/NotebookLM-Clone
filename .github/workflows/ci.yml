@@ -1,0 +1,44 @@
+name: CI
+
+# Runs on every push and pull request so broken code is caught before merge.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  frontend:
+    name: Frontend (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run build
+
+  backend:
+    name: Backend (syntax check)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      # No test suite yet — fail the build on any syntax error across the source tree.
+      # Replace with `bun test` once tests are added (Phase 1 of the polish plan).
+      - run: bun x --bun node --check src/index.js && echo "entry OK"
+      - run: |
+          for f in $(find src worker shared -name "*.js" -not -path "*/node_modules/*"); do
+            node --check "$f" || exit 1
+          done
+          echo "all backend files parse"
