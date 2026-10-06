@@ -49,7 +49,7 @@ export default function AuthForm() {
             className="w-6 h-6 object-contain drop-shadow-xs dark:drop-shadow-[0_2px_6px_rgba(255,255,255,0.15)] group-hover:scale-105 transition-transform duration-200 flex-shrink-0"
           />
           <span className="text-foreground tracking-tight font-semibold text-sm">Chithhi</span>
-          <span className="text-[10px] font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/60">
+          <span className="text-micro font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/60">
             LM
           </span>
         </a>

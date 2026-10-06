@@ -252,7 +252,7 @@ export default function LandingPage() {
             />
             <div className="flex items-center gap-1.5">
               <span className="text-foreground tracking-tight font-semibold text-base group-hover:text-foreground/90 transition-colors">Chithhi</span>
-              <span className="text-[10px] font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/70">
+              <span className="text-micro font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/70">
                 LM
               </span>
             </div>
@@ -352,7 +352,7 @@ export default function LandingPage() {
 
         {/* Supported Document Types Pills */}
         <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground animate-fade-in-up delay-400">
-          <span className="font-semibold uppercase tracking-wider text-[11px] mr-1">Supported Formats:</span>
+          <span className="font-semibold uppercase tracking-wider text-mini mr-1">Supported Formats:</span>
           {['PDF Papers', 'DOCX Manuscripts', 'CSV Datasets', 'TXT Notes', 'Web URLs'].map((format) => (
             <span
               key={format}
@@ -390,12 +390,12 @@ export default function LandingPage() {
                 <div className="w-3 h-3 rounded-full bg-emerald-400/80" />
               </div>
               <div className="h-4 w-px bg-border/80 mx-2 hidden sm:block" />
-              <span className="text-muted-foreground font-mono text-[11px] hidden sm:inline">
+              <span className="text-muted-foreground font-mono text-mini hidden sm:inline">
                 chithhi-lm / workspace / {currentDoc.title}.pdf
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+              <span className="inline-flex items-center gap-1 text-mini font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Qdrant DB: Active
               </span>
@@ -410,7 +410,7 @@ export default function LandingPage() {
                 <span className="text-xs font-semibold tracking-wider uppercase text-muted-foreground">
                   Source Library
                 </span>
-                <span className="text-[10px] text-muted-foreground font-mono">
+                <span className="text-micro text-muted-foreground font-mono">
                   3 Ingested
                 </span>
               </div>
@@ -437,10 +437,10 @@ export default function LandingPage() {
                           <p className="text-xs font-semibold truncate text-foreground leading-snug">
                             {doc.title}
                           </p>
-                          <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                          <p className="text-mini text-muted-foreground truncate mt-0.5">
                             {doc.authors}
                           </p>
-                          <div className="flex items-center gap-2 mt-2 text-[10px] font-mono text-muted-foreground">
+                          <div className="flex items-center gap-2 mt-2 text-micro font-mono text-muted-foreground">
                             <span>{doc.type}</span>
                             <span>·</span>
                             <span>{doc.size}</span>
@@ -468,10 +468,10 @@ export default function LandingPage() {
               {/* Header Info */}
               <div className="border-b border-border pb-4 mb-4">
                 <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                  <span className="text-micro font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-muted text-muted-foreground">
                     {currentDoc.type}
                   </span>
-                  <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
+                  <span className="text-mini font-mono text-emerald-600 dark:text-emerald-400">
                     {currentDoc.score}
                   </span>
                 </div>
@@ -509,7 +509,7 @@ export default function LandingPage() {
                   <div>
                     <p className="text-foreground font-medium mb-2">Abstract & Synthesis:</p>
                     <p className="mb-3">{currentDoc.abstract}</p>
-                    <div className="p-3 rounded-md bg-muted/40 border border-border text-[11px]">
+                    <div className="p-3 rounded-md bg-muted/40 border border-border text-mini">
                       <span className="font-semibold text-foreground block mb-1">Indexed Representation:</span>
                       <span>Parsed into {currentDoc.chunks}. Chunk embeddings normalized in Qdrant collections with dense vector indexing.</span>
                     </div>
@@ -534,7 +534,7 @@ export default function LandingPage() {
                 <span className="text-xs font-semibold tracking-wider uppercase text-muted-foreground">
                   Grounded Dialogue
                 </span>
-                <span className="text-[10px] text-accent font-semibold">Strict RAG</span>
+                <span className="text-micro text-accent font-semibold">Strict RAG</span>
               </div>
 
               {/* Conversation Area */}
@@ -553,7 +553,7 @@ export default function LandingPage() {
                       <p className="text-foreground">{currentQA.a}</p>
 
                       {/* Citation Badge */}
-                      <div className="pt-1.5 border-t border-border/60 flex items-center justify-between text-[11px]">
+                      <div className="pt-1.5 border-t border-border/60 flex items-center justify-between text-mini">
                         <button
                           onClick={() => setShowCitationDetails(!showCitationDetails)}
                           className="inline-flex items-center gap-1 font-semibold text-accent hover:underline cursor-pointer"
@@ -561,11 +561,11 @@ export default function LandingPage() {
                           <Quote className="w-3 h-3" />
                           <span>{currentQA.citation}</span>
                         </button>
-                        <span className="text-muted-foreground text-[10px]">Verified Source</span>
+                        <span className="text-muted-foreground text-micro">Verified Source</span>
                       </div>
 
                       {showCitationDetails && (
-                        <div className="p-2 rounded bg-muted/80 text-[10px] text-muted-foreground border border-border animate-fade-in-up">
+                        <div className="p-2 rounded bg-muted/80 text-micro text-muted-foreground border border-border animate-fade-in-up">
                           Extracted from dense chunk #{activeDocIndex * 3 + 4} with high cosine relevance.
                         </div>
                       )}
@@ -575,7 +575,7 @@ export default function LandingPage() {
 
                 {/* Sample Prompt Selector */}
                 <div className="pt-3 border-t border-border space-y-2">
-                  <span className="text-[11px] text-muted-foreground block font-medium">
+                  <span className="text-mini text-muted-foreground block font-medium">
                     Try questioning this paper:
                   </span>
                   <div className="space-y-1.5">
@@ -712,16 +712,16 @@ export default function LandingPage() {
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  <th className="py-4 px-5 font-semibold text-foreground uppercase tracking-wider text-[11px]">
+                  <th className="py-4 px-5 font-semibold text-foreground uppercase tracking-wider text-mini">
                     Capability
                   </th>
-                  <th className="py-4 px-5 font-semibold text-foreground uppercase tracking-wider text-[11px] bg-accent/10 border-x border-accent/20">
+                  <th className="py-4 px-5 font-semibold text-foreground uppercase tracking-wider text-mini bg-accent/10 border-x border-accent/20">
                     Chithhi LM (RAG)
                   </th>
-                  <th className="py-4 px-5 font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">
+                  <th className="py-4 px-5 font-semibold text-muted-foreground uppercase tracking-wider text-mini">
                     Generic Chatbots
                   </th>
-                  <th className="py-4 px-5 font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">
+                  <th className="py-4 px-5 font-semibold text-muted-foreground uppercase tracking-wider text-mini">
                     Standard PDF Readers
                   </th>
                 </tr>
@@ -807,7 +807,7 @@ export default function LandingPage() {
             />
             <div className="flex items-center gap-1.5">
               <span className="text-foreground tracking-tight font-semibold text-sm">Chithhi LM</span>
-              <span className="text-[10px] text-muted-foreground font-mono">v1.2.0</span>
+              <span className="text-micro text-muted-foreground font-mono">v1.2.0</span>
             </div>
             <span className="text-muted-foreground text-xs hidden sm:inline">
               · Open-Source Research Intelligence

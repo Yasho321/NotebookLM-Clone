@@ -1,11 +1,15 @@
-import { useEffect } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useSourceStore } from '../stores/sourceStore';
 import AuthForm from '../components/AuthForm';
 import Header from '../components/Header';
 import WorkspaceLayout from '../components/WorkspaceLayout';
-import LandingPage from './LandingPage';
+import CommandPalette from '../components/CommandPalette';
+
+// The marketing landing page is large and only shown to logged-out visitors on "/".
+// Lazy-load it so it isn't bundled into the authenticated workspace's critical path.
+const LandingPage = lazy(() => import('./LandingPage'));
 
 const LoadingScreen = () => (
   <div className="min-h-screen bg-background flex items-center justify-center">
@@ -30,10 +34,23 @@ const Index = () => {
   const { fetchSources } = useSourceStore();
   const location = useLocation();
   const navigate = useNavigate();
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
+
+  // Global Cmd/Ctrl+K toggles the command palette (only matters once authed).
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     if (authUser) {
@@ -57,7 +74,11 @@ const Index = () => {
     if (location.pathname === '/auth' || location.pathname === '/workspace') {
       return <AuthForm />;
     }
-    return <LandingPage />;
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-background" />}>
+        <LandingPage />
+      </Suspense>
+    );
   }
 
   // Authenticated — show workspace
@@ -65,6 +86,7 @@ const Index = () => {
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       <Header />
       <WorkspaceLayout />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
     </div>
   );
 };

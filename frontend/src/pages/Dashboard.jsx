@@ -118,7 +118,7 @@ export default function Dashboard() {
             <h1 className="text-xs font-medium text-muted-foreground tracking-tight hidden sm:inline">
               Observability & Evaluation Cockpit
             </h1>
-            <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border/60">
+            <span className="text-micro font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border/60">
               Telemetry
             </span>
           </div>
@@ -151,73 +151,73 @@ export default function Dashboard() {
         {/* KPI Metric Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <div className="p-3.5 rounded-lg border border-border bg-card space-y-1">
-            <span className="text-[11px] font-medium text-muted-foreground block">
+            <span className="text-mini font-medium text-muted-foreground block">
               Total Agent Runs
             </span>
             <p className="text-xl font-mono font-semibold text-foreground">
               {metrics?.totalRuns ?? '—'}
             </p>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-micro text-muted-foreground">
               Sample: {metrics?.sampleSize || 0} traces
             </span>
           </div>
 
           <div className="p-3.5 rounded-lg border border-border bg-card space-y-1">
-            <span className="text-[11px] font-medium text-muted-foreground block">
+            <span className="text-mini font-medium text-muted-foreground block">
               Avg Total Latency
             </span>
             <p className="text-xl font-mono font-semibold text-foreground">
               {metrics?.avgDurationMs ? `${metrics.avgDurationMs}ms` : '—'}
             </p>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-micro text-muted-foreground">
               Ret: {metrics?.avgRetrievalMs || 0}ms · Gen: {metrics?.avgGenerationMs || 0}ms
             </span>
           </div>
 
           <div className="p-3.5 rounded-lg border border-border bg-card space-y-1">
-            <span className="text-[11px] font-medium text-muted-foreground block">
+            <span className="text-mini font-medium text-muted-foreground block">
               Context Grade
             </span>
             <p className="text-xl font-mono font-semibold text-foreground">
               {metrics?.avgGradeScore ? `${metrics.avgGradeScore} / 10` : '—'}
             </p>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-micro text-muted-foreground">
               Corrective RAG target ≥ 6.0
             </span>
           </div>
 
           <div className="p-3.5 rounded-lg border border-border bg-card space-y-1">
-            <span className="text-[11px] font-medium text-muted-foreground block">
+            <span className="text-mini font-medium text-muted-foreground block">
               Refusal Rate
             </span>
             <p className="text-xl font-mono font-semibold text-foreground">
               {metrics?.refusalRate || '0%'}
             </p>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-micro text-muted-foreground">
               Low confidence (&lt;3) fallbacks
             </span>
           </div>
 
           <div className="p-3.5 rounded-lg border border-border bg-card space-y-1">
-            <span className="text-[11px] font-medium text-muted-foreground block">
+            <span className="text-mini font-medium text-muted-foreground block">
               Corrective Retry Rate
             </span>
             <p className="text-xl font-mono font-semibold text-foreground">
               {metrics?.retryRate || '0%'}
             </p>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-micro text-muted-foreground">
               CRAG loop auto-corrections
             </span>
           </div>
 
           <div className="p-3.5 rounded-lg border border-border bg-card space-y-1">
-            <span className="text-[11px] font-medium text-muted-foreground block">
+            <span className="text-mini font-medium text-muted-foreground block">
               Error Rate
             </span>
             <p className="text-xl font-mono font-semibold text-foreground">
               {metrics?.errorRate || '0%'}
             </p>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-micro text-muted-foreground">
               Stream or pipeline faults
             </span>
           </div>
@@ -232,7 +232,7 @@ export default function Dashboard() {
                 <span className="text-xs font-semibold text-foreground">
                   Adaptive Strategy Routing Distribution
                 </span>
-                <span className="text-[10px] text-muted-foreground font-mono">
+                <span className="text-micro text-muted-foreground font-mono">
                   Classifier Breakdowns
                 </span>
               </div>
@@ -242,8 +242,8 @@ export default function Dashboard() {
                   return (
                     <div key={strat} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-mono text-muted-foreground text-[11px]">{strat}</span>
-                        <span className="font-mono font-medium text-foreground text-[11px]">
+                        <span className="font-mono text-muted-foreground text-mini">{strat}</span>
+                        <span className="font-mono font-medium text-foreground text-mini">
                           {count} ({pct}%)
                         </span>
                       </div>
@@ -265,7 +265,7 @@ export default function Dashboard() {
                 <span className="text-xs font-semibold text-foreground">
                   Retrieval Channel Invocations
                 </span>
-                <span className="text-[10px] text-muted-foreground font-mono">
+                <span className="text-micro text-muted-foreground font-mono">
                   Hybrid Blends
                 </span>
               </div>
@@ -276,14 +276,14 @@ export default function Dashboard() {
                   return (
                     <div key={chan} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-mono text-muted-foreground text-[11px]">
+                        <span className="font-mono text-muted-foreground text-mini">
                           {chan === 'VECTOR'
                             ? 'Dense Vector (Qdrant)'
                             : chan === 'BM25'
                             ? 'Sparse Keyword (BM25)'
                             : 'HyDE Vector Search'}
                         </span>
-                        <span className="font-mono font-medium text-foreground text-[11px]">
+                        <span className="font-mono font-medium text-foreground text-mini">
                           {count} queries
                         </span>
                       </div>
@@ -365,21 +365,21 @@ export default function Dashboard() {
                         onClick={() => fetchTraceDetails(trace.traceId)}
                         className="hover:bg-muted/40 cursor-pointer transition-colors"
                       >
-                        <td className="py-2.5 px-4 font-mono text-muted-foreground text-[11px] truncate max-w-[120px]">
+                        <td className="py-2.5 px-4 font-mono text-muted-foreground text-mini truncate max-w-[120px]">
                           {trace.traceId}
                         </td>
                         <td className="py-2.5 px-4 font-medium text-foreground max-w-[280px] truncate">
                           {trace.query}
                         </td>
                         <td className="py-2.5 px-4">
-                          <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border/50">
+                          <span className="font-mono text-micro px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border/50">
                             {rm.strategy || 'UNKNOWN'}
                           </span>
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-[11px]">
+                        <td className="py-2.5 px-4 font-mono text-mini">
                           {trace.duration ? `${trace.duration}ms` : '—'}
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-[11px]">
+                        <td className="py-2.5 px-4 font-mono text-mini">
                           {typeof rm.contextGradeScore === 'number' ? (
                             <span
                               className={
@@ -394,16 +394,16 @@ export default function Dashboard() {
                             '—'
                           )}
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-[11px]">
+                        <td className="py-2.5 px-4 font-mono text-mini">
                           {rm.correctiveRetries || 0}
                         </td>
                         <td className="py-2.5 px-4">
                           {hasJudge ? (
-                            <span className="text-[10px] font-semibold text-green-600 bg-green-600/10 px-1.5 py-0.5 rounded border border-green-600/20">
+                            <span className="text-micro font-semibold text-green-600 bg-green-600/10 px-1.5 py-0.5 rounded border border-green-600/20">
                               Triad: {trace.aiJudge.faithfulness ?? trace.aiJudge.groundedness}/10
                             </span>
                           ) : (
-                            <span className="text-[10px] text-muted-foreground">
+                            <span className="text-micro text-muted-foreground">
                               Not evaluated
                             </span>
                           )}
@@ -454,7 +454,7 @@ export default function Dashboard() {
                 <span className="text-xs font-semibold text-foreground font-mono">
                   {selectedTrace.traceId}
                 </span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                <span className="text-micro font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                   {selectedTrace.duration}ms
                 </span>
               </div>
@@ -472,7 +472,7 @@ export default function Dashboard() {
             <div className="flex-1 overflow-y-auto p-5 space-y-6 text-xs">
               {/* User Query */}
               <div className="space-y-2">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                <span className="text-mini font-semibold text-muted-foreground uppercase tracking-wider block">
                   User Query
                 </span>
                 <div className="p-3 bg-muted/40 rounded-lg border border-border font-medium text-foreground">
@@ -482,10 +482,10 @@ export default function Dashboard() {
 
               {/* Latency Waterfall */}
               <div className="space-y-2">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                <span className="text-mini font-semibold text-muted-foreground uppercase tracking-wider block">
                   Latency Breakdown Waterfall
                 </span>
-                <div className="p-3 border border-border rounded-lg bg-card space-y-2 font-mono text-[11px]">
+                <div className="p-3 border border-border rounded-lg bg-card space-y-2 font-mono text-mini">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Episodic Memory Fetch:</span>
                     <span>{selectedTrace.stepDurations?.memoryMs || 0}ms</span>
@@ -507,30 +507,30 @@ export default function Dashboard() {
 
               {/* Retrieval Funnel Metrics */}
               <div className="space-y-2">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                <span className="text-mini font-semibold text-muted-foreground uppercase tracking-wider block">
                   Retrieval Funnel & Context Grade
                 </span>
-                <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
+                <div className="grid grid-cols-2 gap-2 font-mono text-mini">
                   <div className="p-2.5 border border-border rounded-md bg-card">
-                    <span className="text-muted-foreground block text-[10px]">Candidates:</span>
+                    <span className="text-muted-foreground block text-micro">Candidates:</span>
                     <span className="font-semibold text-foreground">
                       {selectedTrace.retrievalMetrics?.candidateCount || 0} chunks
                     </span>
                   </div>
                   <div className="p-2.5 border border-border rounded-md bg-card">
-                    <span className="text-muted-foreground block text-[10px]">After Floor:</span>
+                    <span className="text-muted-foreground block text-micro">After Floor:</span>
                     <span className="font-semibold text-foreground">
                       {selectedTrace.retrievalMetrics?.afterFloorCount || 0} chunks
                     </span>
                   </div>
                   <div className="p-2.5 border border-border rounded-md bg-card">
-                    <span className="text-muted-foreground block text-[10px]">Reranked Top-K:</span>
+                    <span className="text-muted-foreground block text-micro">Reranked Top-K:</span>
                     <span className="font-semibold text-foreground">
                       {selectedTrace.retrievalMetrics?.afterRerankCount || 0} chunks
                     </span>
                   </div>
                   <div className="p-2.5 border border-border rounded-md bg-card">
-                    <span className="text-muted-foreground block text-[10px]">Context Grade:</span>
+                    <span className="text-muted-foreground block text-micro">Context Grade:</span>
                     <span className="font-semibold text-green-600">
                       {selectedTrace.retrievalMetrics?.contextGradeScore ?? '—'}/10
                     </span>
@@ -541,7 +541,7 @@ export default function Dashboard() {
               {/* AI Judge (LLM-as-a-Judge) RAG Triad Section */}
               <div className="space-y-2 border-t border-border/60 pt-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  <span className="text-mini font-semibold text-muted-foreground uppercase tracking-wider">
                     AI Judge: RAG Triad Evaluation
                   </span>
                   <Button
@@ -557,7 +557,7 @@ export default function Dashboard() {
                 </div>
 
                 {selectedTrace.aiJudge ? (
-                  <div className="p-3.5 rounded-lg border border-border bg-card space-y-2 font-mono text-[11px]">
+                  <div className="p-3.5 rounded-lg border border-border bg-card space-y-2 font-mono text-mini">
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Context Relevance:</span>
                       <span className="font-semibold text-foreground">
@@ -592,7 +592,7 @@ export default function Dashboard() {
 
               {/* Generated Response */}
               <div className="space-y-2 border-t border-border/60 pt-4">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                <span className="text-mini font-semibold text-muted-foreground uppercase tracking-wider block">
                   Agent Final Response
                 </span>
                 <div className="p-3.5 bg-muted/20 rounded-lg border border-border leading-relaxed text-foreground max-h-60 overflow-y-auto">

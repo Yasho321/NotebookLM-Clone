@@ -30,7 +30,7 @@ export default function Header() {
         />
         <div className="flex items-center gap-1.5">
           <span className="text-foreground tracking-tight font-semibold text-sm group-hover:text-foreground/90 transition-colors">Chithhi</span>
-          <span className="text-[10px] font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/60">
+          <span className="text-micro font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/60">
             LM
           </span>
         </div>
