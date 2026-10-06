@@ -611,4 +611,139 @@ export const useChatStore = create((set, get) => ({
       await get().createChat([sourceId]);
     }
   },
+
+  /**
+   * Rename a chat. Optimistic: update UI immediately, roll back on failure.
+   */
+  renameChat: async (chatId, title) => {
+    const trimmed = (title || '').trim();
+    if (!chatId || !trimmed) return { success: false };
+
+    const prevChats = get().chats;
+    const prevActive = get().activeChat;
+
+    // Optimistic update
+    set((state) => ({
+      chats: state.chats.map((c) => (c._id === chatId ? { ...c, title: trimmed } : c)),
+      activeChat:
+        state.activeChat?._id === chatId
+          ? { ...state.activeChat, title: trimmed }
+          : state.activeChat,
+    }));
+
+    try {
+      await axiosInstance.patch(`/chat/${chatId}`, { title: trimmed });
+      return { success: true };
+    } catch (error) {
+      // Roll back
+      set({ chats: prevChats, activeChat: prevActive });
+      toast.error(error.response?.data?.message || 'Failed to rename chat');
+      return { success: false };
+    }
+  },
+
+  /**
+   * Delete a chat. Optimistic: remove from list immediately; if it was active, reset view.
+   */
+  deleteChat: async (chatId) => {
+    if (!chatId) return { success: false };
+
+    const prevChats = get().chats;
+    const wasActive = get().activeChatId === chatId;
+
+    set((state) => ({
+      chats: state.chats.filter((c) => c._id !== chatId),
+      ...(wasActive
+        ? { activeChatId: null, activeChat: null, messages: [], streamingContent: '', streamingCitations: [] }
+        : {}),
+    }));
+
+    try {
+      await axiosInstance.delete(`/chat/${chatId}`);
+      toast.success('Dialogue deleted');
+      if (wasActive) get().startNewChat();
+      return { success: true };
+    } catch (error) {
+      set({ chats: prevChats });
+      toast.error(error.response?.data?.message || 'Failed to delete chat');
+      return { success: false };
+    }
+  },
+
+  /**
+   * Pin / unpin a chat. Optimistic, re-sorts (pinned first, then recency), rolls back on error.
+   */
+  togglePinChat: async (chatId) => {
+    if (!chatId) return { success: false };
+    const prevChats = get().chats;
+
+    const sortChats = (list) =>
+      [...list].sort((a, b) => {
+        if (!!b.pinned !== !!a.pinned) return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
+        return new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt);
+      });
+
+    set((state) => ({
+      chats: sortChats(
+        state.chats.map((c) => (c._id === chatId ? { ...c, pinned: !c.pinned } : c))
+      ),
+    }));
+
+    try {
+      await axiosInstance.patch(`/chat/${chatId}/pin`);
+      return { success: true };
+    } catch (error) {
+      set({ chats: prevChats });
+      toast.error(error.response?.data?.message || 'Failed to pin chat');
+      return { success: false };
+    }
+  },
+
+  /**
+   * Mirror the server-side source-deletion cascade in local state: remove the deleted
+   * source from every chat's sourceIds, and mark any chat left with zero sources read-only.
+   * Gives instant UI feedback without waiting for a refetch.
+   */
+  applySourceDeletion: (sourceId) => {
+    const strip = (chat) => {
+      if (!chat) return chat;
+      const ids = (chat.sourceIds || []).filter(
+        (s) => (typeof s === 'string' ? s : s._id || s.id) !== sourceId
+      );
+      const isReadOnly = chat.isReadOnly || ids.length === 0;
+      return { ...chat, sourceIds: ids, isReadOnly };
+    };
+
+    set((state) => ({
+      chats: state.chats.map(strip),
+      activeChat: state.activeChat ? strip(state.activeChat) : state.activeChat,
+    }));
+  },
+
+  /**
+   * Rate an assistant message 👍/👎. Toggles off if the same rating is clicked again.
+   * Optimistic with rollback. The backend also persists the trace id so this feeds evals.
+   */
+  setMessageFeedback: async (messageIndex, rating) => {
+    const { activeChatId, messages } = get();
+    if (!activeChatId) return;
+    const current = messages[messageIndex]?.feedback ?? null;
+    const next = current === rating ? null : rating;
+
+    set({
+      messages: messages.map((m, i) => (i === messageIndex ? { ...m, feedback: next } : m)),
+    });
+
+    try {
+      await axiosInstance.post(`/chat/${activeChatId}/feedback`, { messageIndex, rating });
+    } catch (error) {
+      // Roll back on failure
+      set((state) => ({
+        messages: state.messages.map((m, i) =>
+          i === messageIndex ? { ...m, feedback: current } : m
+        ),
+      }));
+      toast.error(error.response?.data?.message || 'Failed to save feedback');
+    }
+  },
 }));

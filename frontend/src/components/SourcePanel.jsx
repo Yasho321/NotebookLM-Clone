@@ -2,10 +2,16 @@ import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Plus, FileText, Link, Upload, Loader2, FileType, FileSpreadsheet, AlertCircle, CheckSquare, Square, Check, Lock } from "lucide-react";
+import { Plus, FileText, Link, Upload, Loader2, FileType, FileSpreadsheet, AlertCircle, Check, Lock, Trash2, X, MoreVertical, Pencil, ChevronDown, ChevronUp } from "lucide-react";
 import { useSourceStore } from '../stores/sourceStore';
 import { useChatStore } from '../stores/chatStore';
 import { toast } from 'sonner';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 
 const getSourceIcon = (type) => {
   switch (type) {
@@ -66,6 +72,7 @@ export default function SourcePanel() {
     selectedSource,
     selectedSourceIds,
     isUploading,
+    isLoading,
     addTextSource,
     addFileSource,
     addUrlSource,
@@ -73,6 +80,13 @@ export default function SourcePanel() {
     toggleSourceSelection,
     selectAllSources,
     clearSourceSelection,
+    deleteSource,
+    renameSource,
+    expanded,
+    setExpanded,
+    hasMore,
+    isLoadingMore,
+    loadMoreSources,
   } = useSourceStore();
   const activeChatId = useChatStore((s) => s.activeChatId);
   const startNewChat = useChatStore((s) => s.startNewChat);
@@ -81,6 +95,21 @@ export default function SourcePanel() {
   const [urlInput, setUrlInput] = useState('');
   const [file, setFile] = useState(null);
   const [activeInput, setActiveInput] = useState('text');
+  const [editingId, setEditingId] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+
+  const COLLAPSED_COUNT = 6;
+  const visibleSources = expanded ? sources : sources.slice(0, COLLAPSED_COUNT);
+  const hasExtra = sources.length > COLLAPSED_COUNT || hasMore;
+
+  // Infinite scroll: when expanded and the user nears the bottom, fetch the next page.
+  const handleListScroll = (e) => {
+    if (!expanded || !hasMore || isLoadingMore) return;
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) {
+      loadMoreSources();
+    }
+  };
 
   const handleTextSubmit = async () => {
     if (!textInput.trim()) return;
@@ -224,14 +253,14 @@ export default function SourcePanel() {
       </div>
 
       {/* Sources List */}
-      <div className="flex-1 overflow-y-auto p-5">
+      <div className="flex-1 overflow-y-auto p-5" onScroll={handleListScroll}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <span className="text-label text-muted-foreground font-semibold" style={{ fontSize: '11px', letterSpacing: '0.08em' }}>
               LIBRARY
             </span>
             {sources.length > 0 && (
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border/60">
+              <span className="text-micro font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border/60">
                 {selectedSourceIds.length}/{sources.length} active
               </span>
             )}
@@ -240,7 +269,7 @@ export default function SourcePanel() {
             isChatActive ? (
               <div className="flex items-center gap-1.5">
                 <div
-                  className="flex items-center gap-1 text-[11px] text-muted-foreground bg-muted/60 px-2 py-0.5 rounded border border-border/60 cursor-default"
+                  className="flex items-center gap-1 text-mini text-muted-foreground bg-muted/60 px-2 py-0.5 rounded border border-border/60 cursor-default"
                   title="Source selection is locked for this active dialogue. Start a new dialogue to change sources."
                 >
                   <Lock className="w-3 h-3 text-muted-foreground" />
@@ -249,14 +278,14 @@ export default function SourcePanel() {
                 <button
                   type="button"
                   onClick={startNewChat}
-                  className="text-[11px] font-medium text-foreground hover:underline transition-colors cursor-pointer"
+                  className="text-mini font-medium text-foreground hover:underline transition-colors cursor-pointer"
                   title="Start a new dialogue to choose different sources"
                 >
                   + New
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-[11px]">
+              <div className="flex items-center gap-2 text-mini">
                 <button
                   type="button"
                   onClick={selectAllSources}
@@ -280,24 +309,33 @@ export default function SourcePanel() {
         </div>
 
         <div className="space-y-1">
-          {sources.map((source) => {
-            const isChecked = selectedSourceIds.includes(source._id || source.id);
-            const isViewing = selectedSource?._id === (source._id || source.id);
+          {visibleSources.map((source) => {
+            const id = source._id || source.id;
+            const isChecked = selectedSourceIds.includes(id);
+            const isViewing = selectedSource?._id === id;
+            const isEditing = editingId === id;
+            const displayName = source.title || source.originalFileName || `${source.type} source`;
+
+            const saveRename = async () => {
+              const t = editTitle.trim();
+              setEditingId(null);
+              if (t && t !== source.title) await renameSource(id, t);
+            };
 
             return (
               <div
-                key={source._id || source.id}
-                className={`p-2.5 rounded-md cursor-pointer transition-all border ${
+                key={id}
+                className={`group relative p-2.5 rounded-md transition-all border ${
                   isViewing
                     ? 'bg-muted/60 border-foreground/30 shadow-xs'
                     : isChecked
                     ? 'border-border/80 hover:bg-muted/30'
                     : 'border-transparent opacity-75 hover:opacity-100 hover:bg-muted/20'
-                }`}
-                onClick={() => selectSource(source)}
+                } ${isEditing ? '' : 'cursor-pointer'}`}
+                onClick={() => !isEditing && selectSource(source)}
               >
                 <div className="flex items-start gap-2.5">
-                  {/* Selection Checkbox for Querying (Locked when chat is active) */}
+                  {/* Selection checkbox (locked to the active dialogue) */}
                   <button
                     type="button"
                     onClick={(e) => {
@@ -305,7 +343,7 @@ export default function SourcePanel() {
                       if (isChatActive) {
                         toast.info("Sources are locked to the current dialogue. Click '+ New' to start a new dialogue with different sources.");
                       } else {
-                        toggleSourceSelection(source._id || source.id);
+                        toggleSourceSelection(id);
                       }
                     }}
                     className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
@@ -317,28 +355,32 @@ export default function SourcePanel() {
                         ? 'bg-primary border-primary text-primary-foreground cursor-pointer'
                         : 'border-border hover:border-foreground/50 bg-background cursor-pointer'
                     }`}
-                    title={
-                      isChatActive
-                        ? isChecked
-                          ? "Source is part of this active dialogue (locked). Start a new dialogue to change sources."
-                          : "Source is not part of this dialogue (locked). Start a new dialogue to change sources."
-                        : isChecked
-                        ? "Source included in next dialogue (click to exclude)"
-                        : "Source excluded from next dialogue (click to include)"
-                    }
-                    aria-label={`Toggle source ${source.title || source.originalFileName}`}
+                    aria-label={`Toggle source ${displayName}`}
                   >
                     {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
                   </button>
 
-                  <div className="flex-shrink-0 mt-0.5">
-                    {getSourceIcon(source.type)}
-                  </div>
+                  <div className="flex-shrink-0 mt-0.5">{getSourceIcon(source.type)}</div>
 
                   <div className="flex-1 min-w-0">
-                    <p className="text-meta font-semibold text-foreground truncate leading-snug">
-                      {source.title || source.originalFileName || `${source.type} source`}
-                    </p>
+                    {isEditing ? (
+                      <input
+                        autoFocus
+                        value={editTitle}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveRename();
+                          if (e.key === 'Escape') setEditingId(null);
+                        }}
+                        onBlur={saveRename}
+                        className="w-full px-1.5 py-0.5 rounded text-meta font-semibold bg-background border border-foreground/40 focus:outline-none"
+                      />
+                    ) : (
+                      <p className="text-meta font-semibold text-foreground truncate leading-snug">
+                        {displayName}
+                      </p>
+                    )}
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-muted-foreground" style={{ fontSize: '11px' }}>
                         {getTypeLabel(source.type)}
@@ -346,16 +388,93 @@ export default function SourcePanel() {
                       <StatusBadge status={source.status} />
                     </div>
                   </div>
+
+                  {/* Kebab menu: Rename / Delete (portaled, always clickable) */}
+                  {!isEditing && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={(e) => e.stopPropagation()}
+                          className="p-1 -mr-1 rounded text-muted-foreground opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100 hover:text-foreground hover:bg-muted transition-all cursor-pointer flex-shrink-0"
+                          aria-label={`Actions for ${displayName}`}
+                        >
+                          <MoreVertical className="w-3.5 h-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setEditTitle(source.title || source.originalFileName || '');
+                            setEditingId(id);
+                          }}
+                        >
+                          <Pencil className="w-3.5 h-3.5" /> Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                          onSelect={() => deleteSource(id)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
               </div>
             );
           })}
-          {sources.length === 0 && (
+
+          {isLoading && sources.length === 0 && (
+            <div className="space-y-1 animate-fade-in" aria-hidden="true">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="p-2.5 flex items-start gap-2.5">
+                  <div className="skeleton" style={{ width: '16px', height: '16px', borderRadius: '4px' }} />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="skeleton" style={{ width: '80%', height: '12px' }} />
+                    <div className="skeleton" style={{ width: '45%', height: '10px' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!isLoading && sources.length === 0 && (
             <div className="text-center py-12">
               <FileText className="w-8 h-8 mx-auto text-muted-foreground/40 mb-3" />
-              <p className="text-meta text-muted-foreground">
-                No sources indexed
-              </p>
+              <p className="text-meta text-muted-foreground">No sources indexed</p>
+            </div>
+          )}
+
+          {/* Show more / Show less + infinite-scroll loader */}
+          {hasExtra && (
+            <div className="pt-2">
+              {!expanded ? (
+                <button
+                  type="button"
+                  onClick={() => setExpanded(true)}
+                  className="w-full flex items-center justify-center gap-1 py-1.5 text-mini font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 rounded transition-colors cursor-pointer"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                  Show more
+                </button>
+              ) : (
+                <>
+                  {isLoadingMore && (
+                    <div className="flex justify-center py-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(false)}
+                    className="w-full flex items-center justify-center gap-1 py-1.5 text-mini font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 rounded transition-colors cursor-pointer"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                    Show less
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>

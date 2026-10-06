@@ -17,7 +17,7 @@ const loadFromStorage = () => {
       const parsed = JSON.parse(stored);
       return { ...defaults, ...parsed, fullscreenPanel: null };
     }
-  } catch (e) {
+  } catch {
     // ignore
   }
   return defaults;
@@ -31,7 +31,7 @@ const saveToStorage = (state) => {
       sourceCollapsed: state.sourceCollapsed,
       chatCollapsed: state.chatCollapsed,
     }));
-  } catch (e) {
+  } catch {
     // ignore
   }
 };
