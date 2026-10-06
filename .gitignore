@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Env files (never commit secrets)
+**/.env
+**/.env.local
+**/.env.production
+**/.env.development
+
+# Build output
+dist/
+dist-ssr/
+**/dist/
+
+# Logs
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+.idea/
+*.suo
+
+# Agent/tooling skill caches (large, machine-generated; regenerated per machine).
+# Already-tracked copies stay until you run:
+#   git rm -r --cached .agent .gemini .agents .impeccable
+.agent/
+.agents/
+.gemini/
+.impeccable/
