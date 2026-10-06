@@ -22,8 +22,9 @@ const chatAssistantAgent = new Agent({
 Answer the user's questions clearly, accurately, and strictly grounded in the provided document evidence and personal context.
 
 Citations & Grounding:
-- When using facts from source documents, cite them inline as [Source: <filename>, Page <number>] or [Source: <filename>].
-- If multiple sources are referenced, attribute each fact to its respective source.
+- Cite evidence inline using the passage NUMBER in square brackets, e.g. [1] or [2]. The number must match the "Source Passage N" label of the passage you used. Cite multiple with [1][3].
+- Place the citation right after the sentence or claim it supports. Only cite passages you actually used.
+- If multiple sources are referenced, attribute each fact to its respective passage number.
 - Do not invent citations or make claims unsupported by the evidence.
 - If the retrieval engine indicates that context was insufficient (shouldRefuse), politely explain: "I couldn't find enough information in your sources to answer this question." You may then offer general knowledge with an explicit disclaimer.
 - Maintain a helpful, analytical, and professional tone with Markdown bullets and formatting where appropriate.`,
@@ -349,9 +350,10 @@ export const listChats = async (req, res) => {
     }
 
     const chats = await Chat.find({ userId })
-      .select("sourceIds title createdAt updatedAt")
+      .select("sourceIds title createdAt updatedAt pinned isReadOnly")
       .populate("sourceIds", "title originalFileName type status")
-      .sort({ updatedAt: -1 })
+      // Pinned chats float to the top; within each group, most recently updated first.
+      .sort({ pinned: -1, updatedAt: -1 })
       .lean();
 
     return res.status(200).json({
@@ -397,6 +399,13 @@ export const createMessage = async (req, res) => {
     // ── Find and validate chat ownership ─────────────────────────────────
     const chat = await findChatOrFail(chatId, userId, res);
     if (!chat) return; // Response already sent by findChatOrFail
+
+    if (chat.isReadOnly || !chat.sourceIds?.length) {
+      return res.status(403).json({
+        success: false,
+        message: "This dialogue is read-only because all of its sources were removed.",
+      });
+    }
 
     const activeSources = chat.sourceIds;
     const previousHistory = chat.messages || [];
@@ -446,13 +455,24 @@ export const createMessage = async (req, res) => {
 
     // ── Persist messages to DB atomically ────────────────────────────────
     const userMsg = { role: "user", content: message };
-    const assistantMsg = { role: "assistant", content: refinedRes, citations };
+    const assistantMsg = { role: "assistant", content: refinedRes, citations, traceId: trace?.traceId || null };
+
+    // Auto-title the chat from the first user message so the sidebar isn't full of
+    // "Untitled Dialogue". Only on the very first exchange, and only if untitled.
+    const isFirstExchange = (chat.messages?.length || 0) === 0;
+    const setFields = { updatedAt: new Date() };
+    if (isFirstExchange && !chat.title) {
+      const derived = message.trim().replace(/\s+/g, " ").slice(0, 60);
+      setFields.title = derived + (message.trim().length > 60 ? "…" : "");
+      chat.title = setFields.title;
+    }
+
     chat.messages.push(userMsg);
     chat.messages.push(assistantMsg);
 
     await Chat.findByIdAndUpdate(chat._id, {
       $push: { messages: { $each: [userMsg, assistantMsg] } },
-      $set: { updatedAt: new Date() },
+      $set: setFields,
     });
 
     // ── Asynchronously complete execution trace in background ────────────
@@ -586,6 +606,13 @@ export const regenerateMessage = async (req, res) => {
     const chat = await findChatOrFail(chatId, userId, res);
     if (!chat) return;
 
+    if (chat.isReadOnly || !chat.sourceIds?.length) {
+      return res.status(403).json({
+        success: false,
+        message: "This dialogue is read-only because all of its sources were removed.",
+      });
+    }
+
     if (!chat.messages || chat.messages.length === 0) {
       return res.status(400).json({
         success: false,
@@ -666,7 +693,7 @@ export const regenerateMessage = async (req, res) => {
     const refinedRes = fullText.trim();
 
     // ── Persist the new assistant message atomically ──────────────────────
-    const assistantMsg = { role: "assistant", content: refinedRes, citations };
+    const assistantMsg = { role: "assistant", content: refinedRes, citations, traceId: trace?.traceId || null };
     chat.messages.push(assistantMsg);
 
     await Chat.findByIdAndUpdate(chat._id, {
@@ -868,5 +895,138 @@ export const getChat = async (req, res) => {
       message: "Internal error while fetching chat",
       error: error.message,
     });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /:chatId — Rename a chat
+// ─────────────────────────────────────────────────────────────────────────────
+export const renameChat = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { chatId } = req.params;
+    const { title } = req.body;
+
+    const chat = await findChatOrFail(chatId, userId, res);
+    if (!chat) return; // response already sent
+
+    const newTitle = title.trim();
+    // Targeted update (NOT chat.save()) so we don't re-validate the whole document —
+    // a legacy message with empty content would otherwise fail validation and 500.
+    await Chat.updateOne({ _id: chatId, userId }, { $set: { title: newTitle } });
+
+    return res.status(200).json({
+      success: true,
+      message: "Chat renamed",
+      chat: { _id: chatId, title: newTitle },
+    });
+  } catch (error) {
+    console.error("❌ Error in renameChat:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal error while renaming chat",
+    });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /:chatId — Delete a chat (and abort any in-flight generation for it)
+// ─────────────────────────────────────────────────────────────────────────────
+export const deleteChat = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { chatId } = req.params;
+
+    const chat = await findChatOrFail(chatId, userId, res);
+    if (!chat) return; // response already sent
+
+    // If this chat is mid-stream, abort it so we don't write to a deleted doc.
+    const streamKey = `${userId}:${chatId}`;
+    const controller = activeStreams.get(streamKey);
+    if (controller) {
+      controller.abort();
+      activeStreams.delete(streamKey);
+    }
+
+    await Chat.deleteOne({ _id: chatId, userId });
+
+    return res.status(200).json({
+      success: true,
+      message: "Chat deleted",
+      chatId,
+    });
+  } catch (error) {
+    console.error("❌ Error in deleteChat:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal error while deleting chat",
+    });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /:chatId/pin — Toggle pin state of a chat
+// ─────────────────────────────────────────────────────────────────────────────
+export const togglePinChat = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { chatId } = req.params;
+
+    const chat = await findChatOrFail(chatId, userId, res);
+    if (!chat) return; // response already sent
+
+    const pinned = !chat.pinned;
+    // Targeted update to avoid re-validating embedded messages (see renameChat).
+    await Chat.updateOne({ _id: chatId, userId }, { $set: { pinned } });
+
+    return res.status(200).json({
+      success: true,
+      message: pinned ? "Chat pinned" : "Chat unpinned",
+      chat: { _id: chatId, pinned },
+    });
+  } catch (error) {
+    console.error("❌ Error in togglePinChat:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal error while pinning chat",
+    });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /:chatId/feedback — Rate an assistant message (👍/👎). Toggles off if re-sent.
+// ─────────────────────────────────────────────────────────────────────────────
+export const setMessageFeedback = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { chatId } = req.params;
+    const { messageIndex, rating } = req.body;
+
+    if (rating !== "up" && rating !== "down") {
+      return res.status(400).json({ success: false, message: "rating must be 'up' or 'down'" });
+    }
+
+    const chat = await findChatOrFail(chatId, userId, res);
+    if (!chat) return;
+
+    const idx = Number(messageIndex);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= chat.messages.length) {
+      return res.status(400).json({ success: false, message: "Invalid message index" });
+    }
+    if (chat.messages[idx].role !== "assistant") {
+      return res.status(400).json({ success: false, message: "Only assistant messages can be rated" });
+    }
+
+    // Toggle: re-submitting the same rating clears it.
+    const next = chat.messages[idx].feedback === rating ? null : rating;
+    await Chat.updateOne(
+      { _id: chatId, userId },
+      { $set: { [`messages.${idx}.feedback`]: next } }
+    );
+
+    return res.status(200).json({ success: true, message: "Feedback saved", messageIndex: idx, feedback: next });
+  } catch (error) {
+    console.error("❌ Error in setMessageFeedback:", error);
+    return res.status(500).json({ success: false, message: "Internal error while saving feedback" });
   }
 };

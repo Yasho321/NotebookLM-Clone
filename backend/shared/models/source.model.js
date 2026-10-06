@@ -14,7 +14,7 @@ const sourceSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["uploading", "queued", "processing", "completed", "failed"],
+      enum: ["uploading", "queued", "processing", "completed", "failed", "deleting"],
       default: "uploading",
     },
     s3Key: {

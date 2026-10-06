@@ -34,6 +34,22 @@ export async function ensurePayloadIndex(collectionName, fieldName) {
 }
 
 /**
+ * Deletes every vector point belonging to one source (scoped to its owner for safety).
+ * Mirrors the payload keys used when points are created (metadata.userId / metadata.sourceId).
+ */
+export async function deleteSourceVectors(userId, sourceId) {
+  await qdrantClient.delete("notebookLM-Collection", {
+    wait: true,
+    filter: {
+      must: [
+        { key: "metadata.userId", match: { value: userId.toString() } },
+        { key: "metadata.sourceId", match: { value: sourceId.toString() } },
+      ],
+    },
+  });
+}
+
+/**
  * Initializes all required multi-tenant payload indexes across collections.
  */
 export async function initQdrantIndexes() {

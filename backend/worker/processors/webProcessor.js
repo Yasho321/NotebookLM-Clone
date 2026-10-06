@@ -1,8 +1,13 @@
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
 import { Document } from "@langchain/core/documents";
+import { assertSafeUrl } from "../../shared/libs/urlGuard.js";
 
 export async function processWeb(url) {
+  // Re-check at fetch time (defense in depth): guards against a DB value that was
+  // never validated and against DNS rebinding since the request was first accepted.
+  await assertSafeUrl(url);
+
   const loader = new CheerioWebBaseLoader(url, {
     maxConcurrency: 5,
   });
