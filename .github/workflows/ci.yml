@@ -47,20 +47,23 @@ jobs:
           echo "all backend files parse"
 
   worker:
-    name: Worker (Node — syntax check)
+    name: Worker (Node — install + syntax check)
     runs-on: ubuntu-latest
+    # The worker is its OWN Node package (backend/worker/package.json), started with
+    # `node index.js`. Run the job inside that package so it matches the real process.
     defaults:
       run:
-        working-directory: backend
+        working-directory: backend/worker
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      # The worker process runs on Node. Syntax-check its files (and the shared libs
-      # it imports) under Node to match the real runtime.
+      # Validates the worker's own package.json + lockfile resolve under Node.
+      - run: npm install
+      # No test suite yet — parse every worker file to catch syntax errors.
       - run: |
-          for f in $(find worker -name "*.js" -not -path "*/node_modules/*"); do
+          for f in $(find . -name "*.js" -not -path "*/node_modules/*"); do
             node --check "$f" || exit 1
           done
           echo "all worker files parse"
