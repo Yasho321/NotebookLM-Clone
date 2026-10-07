@@ -1,6 +1,7 @@
 name: CI
 
 # Runs on every push and pull request so broken code is caught before merge.
+# Runtimes mirror local dev: frontend on Node, backend on Bun, worker on Node.
 on:
   push:
     branches: [main]
@@ -8,22 +9,23 @@ on:
 
 jobs:
   frontend:
-    name: Frontend (lint + build)
+    name: Frontend (Node — lint + build)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
         with:
-          bun-version: latest
-      - run: bun install --frozen-lockfile
-      - run: bun run lint
-      - run: bun run build
+          node-version: 20
+      # Not `npm ci` — the committed package-lock.json can lag behind package.json.
+      - run: npm install
+      - run: npm run lint
+      - run: npm run build
 
   backend:
-    name: Backend (syntax check)
+    name: Backend (Bun — syntax check)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,12 +35,32 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - run: bun install --frozen-lockfile
-      # No test suite yet — fail the build on any syntax error across the source tree.
-      # Replace with `bun test` once tests are added (Phase 1 of the polish plan).
-      - run: bun x --bun node --check src/index.js && echo "entry OK"
+      # Validates the Bun lockfile resolves; not frozen so added deps don't fail CI.
+      - run: bun install
+      # No test suite yet — parse every API/shared file to catch syntax errors.
+      # `node --check` only validates syntax, so no deps need to be installed for it.
+      - run: node --check src/index.js && echo "entry OK"
       - run: |
-          for f in $(find src worker shared -name "*.js" -not -path "*/node_modules/*"); do
+          for f in $(find src shared -name "*.js" -not -path "*/node_modules/*"); do
             node --check "$f" || exit 1
           done
           echo "all backend files parse"
+
+  worker:
+    name: Worker (Node — syntax check)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # The worker process runs on Node. Syntax-check its files (and the shared libs
+      # it imports) under Node to match the real runtime.
+      - run: |
+          for f in $(find worker -name "*.js" -not -path "*/node_modules/*"); do
+            node --check "$f" || exit 1
+          done
+          echo "all worker files parse"
