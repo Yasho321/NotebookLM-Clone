@@ -59,8 +59,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      # Validates the worker's own package.json + lockfile resolve under Node.
-      - run: npm install
+      # Same flags as worker/Dockerfile: @langchain/community's optional Stagehand peer
+      # wants zod 3 while the app uses zod 4, so strict peer resolution fails.
+      - run: npm install --omit=dev --legacy-peer-deps
       # No test suite yet — parse every worker file to catch syntax errors.
       - run: |
           for f in $(find . -name "*.js" -not -path "*/node_modules/*"); do
