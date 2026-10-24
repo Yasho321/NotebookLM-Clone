@@ -21,9 +21,9 @@ const app = express();
 
 const port = process.env.PORT || 8080;
 
-// We run behind a reverse proxy (Caddy/nginx). Trusting the first proxy hop lets
-// express-rate-limit read the real client IP from X-Forwarded-For instead of the proxy's.
-app.set("trust proxy", 1);
+// Two proxy hops sit in front of the API: Traefik -> Caddy. Trusting both lets
+// req.ip resolve to the real client from X-Forwarded-For.
+app.set("trust proxy", 2);
 
 // Security headers (clickjacking, MIME sniffing, etc.). crossOriginResourcePolicy is
 // relaxed because the frontend is served from a different origin than this API.
@@ -83,6 +83,11 @@ app.use("/api", apiLimiter);
 // Liveness: cheap, for uptime pings.
 app.get("/api/v1/healthcheck", (req, res) => {
   res.send("Server is running");
+});
+
+// TEMPORARY: verifies the proxy chain resolves the real client IP. Remove after checking.
+app.get("/api/v1/ip", (req, res) => {
+  res.send(req.ip);
 });
 
 // Readiness: reports whether critical dependencies are actually reachable.

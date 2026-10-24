@@ -8,8 +8,18 @@ import rateLimit, { ipKeyGenerator } from "express-rate-limit";
  * - Login/register are brute-force targets, so they get a tighter limit.
  *
  * `standardHeaders` sends RateLimit-* headers so clients can see their remaining quota.
- * Limits are keyed by IP by default; once you have auth you can key by user id instead.
  */
+
+// A misconfigured proxy can send "IP:PORT". The port changes per request (letting a
+// client dodge the limit) and fails express-rate-limit's IP validation, so strip it.
+const clientIp = (req) => {
+  const ip = req.ip || "";
+  const v4WithPort = ip.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
+  return v4WithPort ? v4WithPort[1] : ip;
+};
+
+// ipKeyGenerator groups IPv6 clients by subnet so they can't rotate addresses to escape.
+const ipKey = (req) => ipKeyGenerator(clientIp(req));
 
 // Generous catch-all for normal API traffic.
 export const apiLimiter = rateLimit({
@@ -17,6 +27,7 @@ export const apiLimiter = rateLimit({
   max: 600, // ~40 req/min sustained
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: ipKey,
   message: { success: false, message: "Too many requests, please slow down." },
 });
 
@@ -27,6 +38,7 @@ export const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true, // only failed attempts count toward the limit
+  keyGenerator: ipKey,
   message: { success: false, message: "Too many attempts, please try again later." },
 });
 
@@ -36,8 +48,6 @@ export const chatLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  // Key by authenticated user id; fall back to IP via the ipKeyGenerator helper, which
-  // normalizes IPv6 (groups by /64) so IPv6 clients can't dodge the limit.
-  keyGenerator: (req) => req.user?._id?.toString() || ipKeyGenerator(req.ip),
+  keyGenerator: (req) => req.user?._id?.toString() || ipKey(req),
   message: { success: false, message: "You're sending messages too quickly. Please wait a moment." },
 });
