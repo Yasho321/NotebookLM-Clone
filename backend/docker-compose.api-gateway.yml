@@ -1,16 +1,16 @@
 name: traefik
 
+# Shared HTTPS gateway for every site on this server (chithhi-api, logs, api.peshkarai.in).
+# The dashboard/API is switched off (it was enabled without a host rule or login) and logging is
+# at WARN instead of DEBUG.
 services:
   traefik:
-    image: traefik:latest
+    image: traefik:v3.7.12
     restart: unless-stopped
     command:
-      - "--api=true"
-      - "--api.dashboard=true"
-      - "--log.level=DEBUG"
+      - "--log.level=WARN"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.traefik.address=:8080"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       - "--certificatesresolvers.cert-resolver.acme.httpchallenge=true"
@@ -22,13 +22,6 @@ services:
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./certificates/letsencrypt:/letsencrypt"
-    labels:
-      traefik.enable: true
-      traefik.port: 8080
-      traefik.http.routers.api.entrypoints: "websecure"
-      traefik.http.routers.api.service: "api@internal"
-      traefik.http.routers.api.tls: "true"
-      traefik.http.routers.api.tls.certresolver: "cert-resolver"
     ports:
       - "80:80"
       - "443:443"
@@ -37,6 +30,11 @@ services:
       - project-a-network
       - traefik-dozzle
       - peshkar-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   traefik:

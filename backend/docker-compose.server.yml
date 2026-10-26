@@ -1,13 +1,28 @@
 name: server-application-a
 
+# Rotate every container's log (json-file): at most 3 x 10 MB per container.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# This app shares a 1-vCPU / 4 GB server with Peshkar AI. Memory limits stop it from starving the
+# server, and cpu_shares: 512 (default is 1024) means Peshkar wins when both need the CPU at the
+# same time - when Peshkar is idle this app can still use the whole CPU.
 services:
   api-service:
     build:
       context: .
       dockerfile: Dockerfile
     env_file: .env
+    cpu_shares: 512
+    logging: *default-logging
     deploy:
       replicas: 1
+      resources:
+        limits:
+          memory: 512M
     networks:
       - internal
     depends_on:
@@ -17,18 +32,27 @@ services:
     healthcheck:
       # Uses bun itself, so no curl/wget is needed in the image.
       test: ["CMD", "bun", "-e", "fetch('http://localhost:8080/api/v1/healthcheck').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 30s
+      interval: 60s
       timeout: 5s
       retries: 3
       start_period: 20s
+      start_interval: 5s
 
   worker:
     build:
       context: .
       dockerfile: worker/Dockerfile
     env_file: .env
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=512"
+    cpu_shares: 512
+    init: true
+    logging: *default-logging
     deploy:
       replicas: 1
+      resources:
+        limits:
+          memory: 768M
     networks:
       - internal
     depends_on:
@@ -43,15 +67,22 @@ services:
       - redis-data:/data
     networks:
       - internal
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 320M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 10s
+      start_interval: 2s
     restart: unless-stopped
 
   caddy:
-    image: caddy:latest
+    image: caddy:2.11.4
     restart: unless-stopped
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
@@ -66,6 +97,11 @@ services:
     networks:
       - project-a-network
       - internal
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 64M
 
 volumes:
   redis-data:

@@ -1,11 +1,20 @@
 node_modules
+**/node_modules
 npm-debug.log
 package-lock.json
-.env
 .git
 .gitignore
 *.md
 docker-compose*.yml
 Dockerfile
 worker/Dockerfile
-worker/node_modules
+# Secrets never go into the build context: env files (incl. backups like .env.bak.*),
+# TLS certificates/keys, Dozzle users.
+.env
+.env.*
+**/.env
+**/.env.*
+certificates
+dozzle
+*.pem
+*.key

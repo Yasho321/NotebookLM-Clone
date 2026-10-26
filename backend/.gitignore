@@ -1,3 +1,5 @@
 .env 
 env 
 node_modules
+# Dozzle login users (password hashes) - created on the server, never committed
+dozzle/
